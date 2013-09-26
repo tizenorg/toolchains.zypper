@@ -92,7 +92,9 @@ touch %buildroot%_var/log/zypper.log
 # << install post
 %find_lang zypper
 
-
+# Tizen SDK license
+mkdir -p %{buildroot}/usr/share/license
+cp COPYING %{buildroot}/usr/share/license/%{name}
 
 
 
@@ -119,6 +121,7 @@ touch %buildroot%_var/log/zypper.log
 %doc %{_datadir}/doc/packages/zypper/zypper-rug
 %doc %{_datadir}/doc/packages/zypper/COPYING
 %doc %{_datadir}/doc/packages/zypper/HACKING
+/usr/share/license/%{name}
 # declare ownership of the log file but prevent
 # it from being erased by rpm -e
 %ghost %config(noreplace) %{_var}/log/zypper.log
