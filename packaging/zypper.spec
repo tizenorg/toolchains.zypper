@@ -10,11 +10,10 @@ Summary:    Command line software manager using libzypp
 Version:    1.6.10
 Release:    1
 Group:      System/Packages
-License:    GPL-2.0+
+License:    GPL v2 or later
 URL:        http://en.opensuse.org/Zypper
 Source0:    %{name}-%{version}.tar.bz2
 Source1:    %{name}-rpmlintrc
-Source1001: packaging/zypper.manifest 
 Patch0:     0001-Support-searching-file-with-full-path.patch
 Patch1:     0002-Support-fuzzy-search-file.patch
 Patch2:     0003-fix-linker-error-with-ncurses-library.patch
@@ -53,7 +52,6 @@ or front-ends.
 # << setup
 
 %build
-cp %{SOURCE1001} .
 # >> build pre
 unset LD_AS_NEEDED
 # << build pre
@@ -92,15 +90,12 @@ touch %buildroot%_var/log/zypper.log
 # << install post
 %find_lang zypper
 
-# Tizen SDK license
-mkdir -p %{buildroot}/usr/share/license
-cp COPYING %{buildroot}/usr/share/license/%{name}
+
 
 
 
 
 %files -f zypper.lang
-%manifest zypper.manifest
 %defattr(-,root,root,-)
 # >> files
 %config(noreplace) %{_sysconfdir}/zypp/zypper.conf
@@ -121,7 +116,6 @@ cp COPYING %{buildroot}/usr/share/license/%{name}
 %doc %{_datadir}/doc/packages/zypper/zypper-rug
 %doc %{_datadir}/doc/packages/zypper/COPYING
 %doc %{_datadir}/doc/packages/zypper/HACKING
-/usr/share/license/%{name}
 # declare ownership of the log file but prevent
 # it from being erased by rpm -e
 %ghost %config(noreplace) %{_var}/log/zypper.log
