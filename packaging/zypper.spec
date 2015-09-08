@@ -14,7 +14,6 @@ License:    GPL v2 or later
 URL:        http://en.opensuse.org/Zypper
 Source0:    %{name}-%{version}.tar.bz2
 Source1:    %{name}-rpmlintrc
-Source1001: packaging/zypper.manifest 
 Patch0:     0001-Support-searching-file-with-full-path.patch
 Patch1:     0002-Support-fuzzy-search-file.patch
 Patch2:     0003-fix-linker-error-with-ncurses-library.patch
@@ -53,7 +52,6 @@ or front-ends.
 # << setup
 
 %build
-cp %{SOURCE1001} .
 # >> build pre
 unset LD_AS_NEEDED
 # << build pre
@@ -98,7 +96,6 @@ touch %buildroot%_var/log/zypper.log
 
 
 %files -f zypper.lang
-%manifest zypper.manifest
 %defattr(-,root,root,-)
 # >> files
 %config(noreplace) %{_sysconfdir}/zypp/zypper.conf
