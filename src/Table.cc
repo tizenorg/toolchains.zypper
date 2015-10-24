@@ -2,11 +2,15 @@
 #include <cstring>
 #include <cstdlib>
 
-#include "zypp/base/Logger.h"
+#include <zypp/base/LogTools.h>
+#include <zypp/base/String.h>
+#include <zypp/base/DtorReset.h>
 
+#include "utils/colors.h"
 #include "utils/console.h"
 #include "utils/text.h"
 
+#include "Zypper.h"
 #include "Table.h"
 
 // libzypp logger settings
@@ -37,6 +41,11 @@ void TableRow::add (const string& s) {
   _columns.push_back (s);
 }
 
+void TableRow::addDetail(const string& s)
+{
+  _details.push_back(s);
+}
+
 unsigned int TableRow::cols( void ) const {
   return _columns.size();
 }
@@ -52,6 +61,42 @@ void TableRow::dumbDumpTo (ostream &stream) const {
     stream << *i;
   }
   stream << endl;
+}
+
+void TableRow::dumpDetails(ostream &stream, const Table & parent) const
+{
+  unsigned int width = (parent._width > parent._screen_width)?parent._screen_width:parent._width;
+  string indent( (parent._max_width[0]+parent._max_width[1])/2, ' ' );
+
+  for ( vector<string>::const_iterator it = _details.begin(); it != _details.end(); ++it )
+  {
+    vector<string> text;
+    zypp::str::split( *it, std::back_inserter(text), "\n" );
+
+    for_( line, text.begin(), text.end() )
+    {
+      unsigned int textSize = mbs_width( *line );
+      unsigned int startPos = 0;
+
+      while ( textSize > 0 )
+      {
+        unsigned int endPos;
+
+        if ( textSize + indent.length() <= width )
+        {
+          stream << indent << zypp::str::ltrim( (*line).substr(startPos)) << endl;
+          break;
+        }
+        else
+        {
+          stream << indent << zypp::str::ltrim( (*line).substr(startPos, width-indent.length()) ) << endl;
+          endPos = startPos + width - indent.length();
+          textSize = mbs_width( (*line).substr( endPos ) );
+          startPos = endPos;
+        }
+      }
+    }
+  }
 }
 
 void TableRow::dumpTo (ostream &stream, const Table & parent) const
@@ -70,6 +115,10 @@ void TableRow::dumpTo (ostream &stream, const Table & parent) const
   int curpos = parent._margin;
   // whether to break the line now in order to wrap it to screen width
   bool do_wrap = false;
+  // On a table with 2 edition columns highlight the editions
+  // except for the common prefix.
+  std::string::size_type editionSep( std::string::npos );
+
   for (unsigned c = 0; i != e ; ++i, ++c)
   {
     if (seen_first)
@@ -111,13 +160,64 @@ void TableRow::dumpTo (ostream &stream, const Table & parent) const
     }
     else
     {
-      stream << s;
+      string s(*i);
+      if ( !parent._inHeader && parent.editionStyle( c ) && Zypper::instance()->config().do_colors )
+      {
+	// Edition column
+	if ( parent._editionStyle.size() == 2 )
+	{
+	  // 2 Edition columns - highlight difference
+	  if ( editionSep == std::string::npos )
+	  {
+	    editionSep = zypp::str::commonPrefix( _columns[*parent._editionStyle.begin()],
+						  _columns[*(++parent._editionStyle.begin())] );
+	  }
+
+	  if ( editionSep == 0 )
+	  {
+	    fprint_color( stream, s, COLOR_CONTEXT_HIGHLIGHT );
+	  }
+	  else if ( editionSep == s.size() )
+	  {
+	    stream << s;
+	  }
+	  else
+	  {
+	    stream << s.substr( 0, editionSep );
+	    fprint_color( stream, s.substr( editionSep ), COLOR_CONTEXT_HIGHLIGHT );
+	  }
+	}
+	else
+	{
+	  // highlight edition-release separator
+	  editionSep = s.find( '-' );
+	  if ( editionSep != std::string::npos )
+	  {
+	    stream << s.substr( 0, editionSep );
+	    fprint_color( stream, "-", COLOR_CONTEXT_HIGHLIGHT );
+	    stream << s.substr( editionSep+1 );
+	  }
+	  else	// no release part
+	  {
+	    stream << s;
+	  }
+	}
+      }
+      else	// no special style
+      {
+	stream << s;
+      }
       stream.width (parent._max_width[c] - ssize);
     }
     stream << "";
     curpos += parent._max_width[c] + (parent._style != none ? 2 : 3);
   }
   stream << endl;
+
+  if ( !_details.empty() )
+  {
+    dumpDetails( stream, parent );
+  }
 }
 
 // ----------------------( Table )---------------------------------------------
@@ -132,6 +232,7 @@ Table::Table()
   , _margin(0)
   , _force_break_after(-1)
   , _do_wrap(false)
+  , _inHeader( false )
 {}
 
 void Table::add (const TableRow& tr) {
@@ -223,6 +324,8 @@ void Table::dumpTo (ostream &stream) const {
   }
 
   if (_has_header) {
+    zypp::DtorReset inHeader( _inHeader, false );
+    _inHeader = true;
     _header.dumpTo (stream, *this);
     dumpRule (stream);
   }

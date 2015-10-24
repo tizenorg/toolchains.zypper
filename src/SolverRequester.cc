@@ -10,16 +10,16 @@
  *
  */
 
-#include "zypp/ZYppFactory.h"
-#include "zypp/base/LogTools.h"
+#include <zypp/ZYppFactory.h>
+#include <zypp/base/LogTools.h>
 
-#include "zypp/PoolQuery.h"
-#include "zypp/PoolItemBest.h"
+#include <zypp/PoolQuery.h>
+#include <zypp/PoolItemBest.h>
 
-#include "zypp/Capability.h"
-#include "zypp/Resolver.h"
-#include "zypp/Patch.h"
-#include "zypp/ui/Selectable.h"
+#include <zypp/Capability.h>
+#include <zypp/Resolver.h>
+#include <zypp/Patch.h>
+#include <zypp/ui/Selectable.h>
 
 #include "misc.h"
 
@@ -131,10 +131,6 @@ void SolverRequester::installRemove(const PackageArgs & args)
  */
 void SolverRequester::install(const PackageSpec & pkg)
 {
-  sat::Solvable::SplitIdent splid(pkg.parsed_cap.detail().name());
-  ResKind capkind = splid.kind();
-  string capname = splid.name().asString();
-
   // first try by name
 
   if (!_opts.force_by_cap)
@@ -149,6 +145,7 @@ void SolverRequester::install(const PackageSpec & pkg)
     PoolItemBest bestMatches(q.begin(), q.end());
     if (!bestMatches.empty())
     {
+      unsigned notInstalled = 0;
       for_(sit, bestMatches.begin(), bestMatches.end())
       {
         Selectable::Ptr s(asSelectable()(*sit));
@@ -197,8 +194,17 @@ void SolverRequester::install(const PackageSpec & pkg)
             MIL << "installing " << *sit << endl;
           }
           else
-            addFeedback(Feedback::NOT_INSTALLED, pkg);
+	  {
+	    ++notInstalled;
+            // addFeedback(Feedback::NOT_INSTALLED, pkg);
+	    // delay Feedback::NOT_INSTALLED until we know
+	    // there is not a single match installed.
+	  }
         }
+      }
+      if ( notInstalled == bestMatches.size() )
+      {
+	addFeedback(Feedback::NOT_INSTALLED, pkg);
       }
       return;
     }
@@ -247,10 +253,6 @@ void SolverRequester::install(const PackageSpec & pkg)
  */
 void SolverRequester::remove(const PackageSpec & pkg)
 {
-  sat::Solvable::SplitIdent splid(pkg.parsed_cap.detail().name());
-  ResKind capkind = splid.kind();
-  string capname = splid.name().asString();
-
   // first try by name
 
   if (!_opts.force_by_cap)
@@ -402,6 +404,8 @@ bool SolverRequester::installPatch(
       Patch::InteractiveFlags ignoreFlags = Patch::NoFlags;
       if (Zypper::instance()->globalOpts().reboot_req_non_interactive)
         ignoreFlags |= Patch::Reboot;
+      if ( Zypper::instance()->cOpts().count("auto-agree-with-licenses") || Zypper::instance()->cOpts().count("agree-to-third-party-licenses") )
+	ignoreFlags |= Patch::License;
 
       // bnc #221476
       if (_opts.skip_interactive && patch->interactiveWhenIgnoring(ignoreFlags))
@@ -415,7 +419,7 @@ bool SolverRequester::installPatch(
         addFeedback(Feedback::PATCH_UNWANTED, patchspec, selected, selected);
       }
 
-      else if (!_opts.category.empty() && _opts.category != patch->category())
+      else if ( ! ( _opts.category.empty() || patch->isCategory( _opts.category ) ) )
       {
 	DBG << "candidate patch " << patch << " is not in the specified category" << endl;
 	addFeedback(Feedback::PATCH_WRONG_CAT, patchspec, selected, selected);
@@ -510,7 +514,15 @@ void SolverRequester::updateTo(
       setToInstall(selected);
       MIL << *s << " update: setting " << selected << " to install" << endl;
     }
-    else if (_opts.force)
+    else if ( selected->edition() == installed->edition()
+	    && selected->arch() != installed->arch()
+	    && pkg.parsed_cap.detail().hasArch() /*userselected architecture*/ )
+    {
+      // set 'candidate' for installation
+      setToInstall(selected);
+      MIL << *s << " update: setting " << selected << " to install (arch change request)" << endl;
+    }
+    else if (_opts.force || _opts.oldpackage)
     {
       // set 'candidate' for installation
       setToInstall(selected);
@@ -555,12 +567,12 @@ void SolverRequester::updateTo(
   }
   else if (installed->edition() > selected->edition())
   {
-    if (_opts.force)
+    if (_opts.force || _opts.oldpackage)
       return;
 
     addFeedback(Feedback::SELECTED_IS_OLDER, pkg, selected, installed);
     MIL << "Selected is older than the installed."
-        " Will not downgrade unless --force is used" << endl;
+        " Will not downgrade unless --oldpackage is used" << endl;
   }
 
   // there is higher version available than the selected candidate
@@ -615,6 +627,21 @@ void SolverRequester::setToInstall(const PoolItem & pi)
     pi.status().setToBeInstalled(ResStatus::USER);
     addFeedback(Feedback::FORCED_INSTALL, PackageSpec(), pi);
   }
+  else if ( asSelectable()(pi)->locked() )
+  {
+    // Workaround: Use a solver request instead of selecting the item.
+    // This will enable the solver to report the lock conflict, while
+    // selecting the item will silently remove the lock.
+    // Basically the right way but zypp solver job API needs polishing
+    // as ther are better jobs than 'addRequire'.
+    sat::Solvable solv( pi.satSolvable() );
+    Capability cap( solv.arch(), solv.name(), Rel::EQ, solv.edition(), solv.kind() );
+    zypp::getZYpp()->resolver()->addRequire( cap );
+    _requires.insert( cap );
+    addFeedback(Feedback::SET_TO_INSTALL, PackageSpec(), pi);
+    addFeedback(Feedback::INSTALLED_LOCKED, PackageSpec(), pi);
+    return;
+  }
   else
   {
     asSelectable()(pi)->setOnSystem(pi, ResStatus::USER);
@@ -627,6 +654,21 @@ void SolverRequester::setToInstall(const PoolItem & pi)
 
 void SolverRequester::setToRemove(const zypp::PoolItem & pi)
 {
+  if ( asSelectable()(pi)->locked() )
+  {
+    // Workaround: Use a solver request instead of selecting the item.
+    // This will enable the solver to report the lock conflict, while
+    // selecting the item will silently remove the lock.
+    // Basically the right way but zypp solver job API needs polishing
+    // as ther are better jobs than 'addRequire'.
+    sat::Solvable solv( pi.satSolvable() );
+    Capability cap( solv.arch(), solv.name(), Rel::EQ, solv.edition(), solv.kind() );
+    zypp::getZYpp()->resolver()->addConflict( cap );
+    _conflicts.insert( cap );
+    addFeedback(Feedback::SET_TO_REMOVE, PackageSpec(), pi);
+    addFeedback(Feedback::INSTALLED_LOCKED, PackageSpec(), pi);
+    return;
+  }
   pi.status().setToBeUninstalled(ResStatus::USER);
   addFeedback(Feedback::SET_TO_REMOVE, PackageSpec(), pi);
   _toremove.insert(pi);

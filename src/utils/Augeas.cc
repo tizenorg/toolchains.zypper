@@ -7,8 +7,8 @@
 #include <iostream>
 #include <stdlib.h>
 
-#include "zypp/base/Logger.h"
-#include "zypp/Pathname.h"
+#include <zypp/base/Logger.h>
+#include <zypp/Pathname.h>
 #include "Zypper.h"
 #include "utils/Augeas.h"
 
@@ -74,33 +74,29 @@ Augeas::Augeas(const string & file)
       _user_conf_path = "/files" + _homedir + "/.zypper.conf";
 
     // global conf errors
-    _got_global_zypper_conf =
-      ::aug_get(_augeas, "/files/etc/zypp/zypper.conf", NULL) != 0;
+    _got_global_zypper_conf = ::aug_get(_augeas, "/files/etc/zypp/zypper.conf", NULL) != 0;
     if (::aug_get(_augeas, "/augeas/files/etc/zypp/zypper.conf/error/message", value))
-      error = value[0];
-
+      error = std::string("/etc/zypp/zypper.conf: ") + value[0];
   }
 
   // user conf errors
   if (!_user_conf_path.empty())
   {
-    _got_user_zypper_conf =
-      ::aug_get(_augeas, _user_conf_path.c_str(), NULL) != 0;
+    _got_user_zypper_conf = ::aug_get(_augeas, _user_conf_path.c_str(), NULL) != 0;
     string user_conf_err = "/augeas" + _user_conf_path + "/error/message";
     if (::aug_get(_augeas, user_conf_err.c_str(), value))
-      error += string("\n") + value[0];
+    {
+      if ( ! error.empty() ) error += string("\n");
+      error += _user_conf_path.substr( 6 );
+      error += ": ";
+      error += value[0];
+    }
   }
 
-  if (!_got_global_zypper_conf && !_got_user_zypper_conf)
+  if (!_got_global_zypper_conf && !_got_user_zypper_conf && !error.empty() )
   {
-    if (error.empty())
-      ZYPP_THROW(Exception(
-          _("No configuration file exists or could be parsed.")));
-    else
-    {
-      string msg = _("Error parsing zypper.conf:") + string("\n") + error;
-      ZYPP_THROW(Exception(msg));
-    }
+    string msg = _("Error parsing zypper.conf:") + string("\n") + error;
+    ZYPP_THROW(Exception(msg));
   }
 
   MIL << "Done reading conf files:" << endl;
@@ -173,7 +169,7 @@ string Augeas::getOption(const string & option) const
   {
     string augpath_u = userOptionPath(opt[0], opt[1]);
     string result = get(augpath_u);
-    if (_last_get_result == 1 && !isCommented(opt[0], opt[1], false))
+    if (_last_get_result == 1)
       return result;
   }
 
@@ -181,7 +177,7 @@ string Augeas::getOption(const string & option) const
   {
     string augpath_g = global_option_path(opt[0], opt[1]);
     string result = get(augpath_g);
-    if (_last_get_result == 1 && !isCommented(opt[0], opt[1], true))
+    if (_last_get_result == 1)
       return result;
   }
 
@@ -189,56 +185,3 @@ string Augeas::getOption(const string & option) const
 }
 
 // ---------------------------------------------------------------------------
-
-TriBool Augeas::isCommented(
-    const string & section, const string & option, bool global) const
-{
-  // don't bother calling aug_get if we don't have the config read
-  if ((global && !_got_global_zypper_conf) ||
-      (!global && !_got_user_zypper_conf))
-    return TriBool::indeterminate_value;
-
-  Pathname path(global ?
-      global_option_path(section, option) :
-      userOptionPath(section, option));
-
-  TriBool result;
-
-  char ** matches;
-  int matchcount = ::aug_match(_augeas, path.c_str(), &matches);
-  if (matchcount == 1)
-  {
-    path = Pathname(matches[0]);
-    // the 'commented' flag is a sibling of the key=value node
-    path = path.dirname() + "/commented";
-    DBG << path << ": ";
-    int res = ::aug_get(_augeas, path.c_str(), NULL);
-    if (res)
-      result = true;
-    else if (res == 0)
-      result = false;
-    DBG << result << endl;
-  }
-  for (int i = 0; i < matchcount; ++i)
-    ::free(matches[i]);
-  if (matchcount)
-    ::free(matches);
-
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-
-TriBool Augeas::isCommented(const string & option, bool global) const
-{
-  vector<string> opt;
-  str::split(option, back_inserter(opt), "/");
-
-  if (opt.size() != 2 || opt[0].empty() || opt[1].empty())
-  {
-    ERR << "invalid option " << option << endl;
-    return TriBool::indeterminate_value;
-  }
-
-  return isCommented(opt[0], opt[1], global);
-}

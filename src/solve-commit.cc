@@ -9,14 +9,14 @@
 #include <sstream>
 #include <boost/format.hpp>
 
-#include "zypp/ZYppFactory.h"
-#include "zypp/base/Logger.h"
-#include "zypp/FileChecker.h"
-#include "zypp/base/InputStream.h"
-#include "zypp/base/IOStream.h"
+#include <zypp/ZYppFactory.h>
+#include <zypp/base/Logger.h>
+#include <zypp/FileChecker.h>
+#include <zypp/base/InputStream.h>
+#include <zypp/base/IOStream.h>
 
-#include "zypp/media/MediaException.h"
-#include "zypp/misc/CheckAccessDeleted.h"
+#include <zypp/media/MediaException.h>
+#include <zypp/misc/CheckAccessDeleted.h>
 
 #include "misc.h"              // confirm_licenses
 #include "repos.h"              // get_repo - used in dist_upgrade
@@ -448,8 +448,8 @@ static void notify_processes_using_deleted_files(Zypper & zypper)
   if (checker.size() > 1 || (checker.size() == 1 && checker.begin()->pid != zypp::str::numstring(::getpid())))
   {
     zypper.out().info(str::form(
-        _("There are some running programs that use files deleted by recent upgrade."
-          " You may wish to restart some of them. Run '%s' to list these programs."),
+        _("There are some running programs that might use files deleted by recent upgrade."
+          " You may wish to check and restart some of them. Run '%s' to list these programs."),
         "zypper ps"));
   }
 }
@@ -509,7 +509,6 @@ static void show_update_messages(Zypper & zypper, const UpdateNotifications & me
 void solve_and_commit (Zypper & zypper)
 {
   bool need_another_solver_run = true;
-  bool commit_done = false;
   do
   {
     // CALL SOLVER
@@ -560,6 +559,13 @@ void solve_and_commit (Zypper & zypper)
 
     Summary summary(God->pool());
 
+    if ( zypper.cOpts().count("details") )
+      summary.setViewOption(Summary::DETAILS);
+    else if (zypper.out().verbosity() == Out::HIGH)
+      summary.setViewOption(Summary::SHOW_VERSION);
+    else if (zypper.out().verbosity() == Out::DEBUG)
+      summary.setViewOption(Summary::SHOW_ALL);
+
     // show not updated packages if 'zypper up' (-t package or -t product)
     ResKindSet kinds;
     if (zypper.cOpts().find("type") != zypper.cOpts().end())
@@ -577,13 +583,8 @@ void solve_and_commit (Zypper & zypper)
     Product::constPtr platform = God->target()->baseProduct();
     if (platform && platform->name().find("SUSE_SLE") != string::npos)
       summary.setViewOption(Summary::SHOW_UNSUPPORTED);
-
-    if (zypper.out().verbosity() == Out::HIGH)
-      summary.setViewOption(Summary::SHOW_VERSION);
-    else if (zypper.out().verbosity() == Out::DEBUG)
-      summary.setViewOption(Summary::SHOW_ALL);
-
-    summary.setShowRepoAlias(zypper.config().show_alias);
+    else
+      summary.unsetViewOption(Summary::SHOW_UNSUPPORTED);
 
     if (get_download_option(zypper, true) == DownloadOnly)
       summary.setDownloadOnly(true);
@@ -746,9 +747,12 @@ void solve_and_commit (Zypper & zypper)
           RuntimeData & gData = Zypper::instance()->runtimeData();
           gData.show_media_progress_hack = true;
           // Total packages to download & install.
-          // To be used to write overall progress.
+          // To be used to write overall progress of retrieving packages.
           gData.commit_pkgs_total = summary.packagesToGetAndInstall();
           gData.commit_pkg_current = 0;
+          // To be used to show overall progress of rpm transactions.
+          gData.rpm_pkgs_total = God->resolver()->getTransaction().actionSize();
+          gData.rpm_pkg_current = 0;
 
           ostringstream s;
           s << _("committing"); MIL << "committing...";
@@ -757,7 +761,6 @@ void solve_and_commit (Zypper & zypper)
           zypper.out().info(s.str(), Out::HIGH);
 
           ZYppCommitResult result = God->commit(get_commit_policy(zypper));
-          commit_done = true;
 
           MIL << endl << "DONE" << endl;
 
@@ -873,10 +876,13 @@ void solve_and_commit (Zypper & zypper)
         }
 
         // check for running services (fate #300763)
-        if (summary.packagesToRemove() ||
-            summary.packagesToUpgrade() ||
-            summary.packagesToDowngrade())
+        if ( zypper.cOpts().find("download-only") == zypper.cOpts().end()
+	  && ( summary.packagesToRemove()
+	    || summary.packagesToUpgrade()
+	    || summary.packagesToDowngrade() ) )
+	{
           notify_processes_using_deleted_files(zypper);
+	}
       }
     }
     // noting to do

@@ -9,18 +9,17 @@
 #include <iostream>
 #include <unistd.h>          // for getcwd()
 
-#include "zypp/base/Logger.h"
-#include "zypp/base/String.h"
-#include "zypp/base/Easy.h"
-#include "zypp/base/Regex.h"
-#include "zypp/media/MediaManager.h"
-#include "zypp/parser/xml/XmlEscape.h"
-#include "zypp/misc/CheckAccessDeleted.h"
-#include "zypp/ExternalProgram.h"
+#include <zypp/base/Logger.h>
+#include <zypp/base/String.h>
+#include <zypp/base/Easy.h>
+#include <zypp/base/Regex.h>
+#include <zypp/media/MediaManager.h>
+#include <zypp/misc/CheckAccessDeleted.h>
+#include <zypp/ExternalProgram.h>
 
-#include "zypp/PoolItem.h"
-#include "zypp/Product.h"
-#include "zypp/Pattern.h"
+#include <zypp/PoolItem.h>
+#include <zypp/Product.h>
+#include <zypp/Pattern.h>
 
 #include "main.h"
 #include "Zypper.h"
@@ -70,6 +69,8 @@ ResKind string_to_kind (const string & skind)
     return ResKind::patch;
   if (lskind == "srcpackage")
     return ResKind::srcpackage;
+  if (lskind == "application")
+    return ResKind::application;
   // not recognized
   return empty;
 }
@@ -104,6 +105,8 @@ string kind_to_string_localized(const zypp::ResKind & kind, unsigned long count)
     return _PL("patch", "patches", count);
   if (kind == ResKind::srcpackage)
     return _PL("srcpackage", "srcpackages", count);
+  if (kind == ResKind::application)
+    return _PL("application", "applications", count);
   // default
   return _PL("resolvable", "resolvables", count);
 }
@@ -126,20 +129,13 @@ string string_patch_status(const PoolItem & pi)
     return "";
   }
 
-  return _("Not Applicable"); //! \todo make this "Not Needed" after 11.0
+  return _("Not Needed");
 }
 
 // ----------------------------------------------------------------------------
 
 bool looks_like_url (const string& s)
 {
-/*
-  static bool schemes_shown = false;
-  if (!schemes_shown) {
-    DBG << "Registered schemes: " << Url::getRegisteredSchemes () << endl;
-    schemes_shown = true;
-  }
-*/
   string::size_type pos = s.find (':');
   if (pos != string::npos)
   {
@@ -213,42 +209,48 @@ Url make_url (const string & url_s)
 // http://gitorious.org/opensuse/build-service/blobs/master/src/webui/app/controllers/application_controller.rb
 #define OBS_PROJECT_NAME_RX "[" ALNUM "][-+" ALNUM "\\.:]+"
 
-Url make_obs_url (
-    const string & obsuri,
-    const Url & base_url,
-    const string & default_platform)
+
+Url make_obs_url( const string & obsuri, const Url & base_url, const string & default_platform )
 {
-  // zypper's 'obs' URI regex
-  static str::regex obs_uri_rx("^obs://(" OBS_PROJECT_NAME_RX ")/?(.*)$");
+  // obs-server ==> < base_url, default_platform >
+  static std::map<std::string, std::pair<zypp::Url,std::string>> wellKnownServers({
+    { "build.opensuse.org",	{ Url("http://download.opensuse.org/repositories/"),	std::string() } }
+  });
+
+  static str::regex obs_uri_rx("^obs://(" OBS_PROJECT_NAME_RX ")(/(.*)?)?$");
   str::smatch what;
-  if (str::regex_match(obsuri, what, obs_uri_rx))
+
+  if ( str::regex_match( obsuri, what, obs_uri_rx ) )
   {
-    vector<string> obsrpath;
-    str::split(what[1], back_inserter(obsrpath), ":");
-    if (obsrpath.empty())
+    std::string project( what[1] );
+    std::string platform( what[3] );
+
+    // in case the project matches a well known obs://server,
+    // strip it and use it's base_url and platform defaults.
+    // If the servers platform default is empty, use the
+    // global one.
+    auto it( wellKnownServers.find( project ) );
+    if ( it != wellKnownServers.end() )
     {
-      Zypper::instance()->out().error(_("Empty OBS project name."));
-      return Url();
+      static str::regex obs_uri2_rx("^(" OBS_PROJECT_NAME_RX ")(/(.*)?)?$");
+      if ( str::regex_match( platform, what, obs_uri2_rx ) )
+      {
+	project = what[1];
+	platform = ( what[3].empty() ? it->second.second : what[3] );
+      }
+      else
+	it = wellKnownServers.end();	// we stay with the 1st match, thus will use the global defaults
     }
 
-    ostringstream urlstr; urlstr << "/";
-    unsigned i = 0;
-    for (; i < obsrpath.size() - 1; ++i)
-      urlstr << obsrpath[i] << ":/";
-    urlstr << obsrpath[i] << "/";         // no colon at the end
+    // Now bulid the url; ':' in project is replaced by ':/'
+    Url ret( it == wellKnownServers.end() ? base_url : it->second.first );
 
-    if (what[2].empty())
-      urlstr << default_platform;
-    else
-      urlstr << what[2];
-    urlstr << "/";
+    Pathname path( ret.getPathName() );
+    path /= str::gsub( project, ":", ":/" );
+    path /= ( platform.empty() ? default_platform : platform );
+    ret.setPathName( path.asString() );
 
-    Url url = Url(base_url);
-    Pathname newpath(url.getPathName());
-    newpath = newpath / Pathname(urlstr.str());
-    url.setPathName(newpath.asString());
-
-    return url;
+    return ret;
   }
   else
   {
@@ -319,11 +321,6 @@ Pathname cache_rpm(const string & rpm_uri_str, const string & cache_dir)
   return Pathname();
 }
 
-string xml_encode(const string & text)
-{
-  return zypp::xml::escape(text);
-}
-
 std::string & indent(std::string & text, int columns)
 {
   string indent(columns, ' '); indent.insert(0, 1, '\n');
@@ -340,52 +337,62 @@ std::string & indent(std::string & text, int columns)
 string asXML(const Product & p, bool is_installed)
 {
   ostringstream str;
-  str
-    << "<product"
-       " name=\"" << xml_encode(p.name()) << "\""
-       " version=\"" << p.edition().version() << "\""
-       " release=\"" << p.edition().release() << "\""
-       " epoch=\"" << p.edition().epoch() << "\""
-       " arch=\"" << p.arch() << "\""
-       " productline=\"" << p.productLine() << "\""
-       " registerrelease=\"" << xml_encode(p.registerRelease()) << "\""
-       " vendor=\"" << xml_encode(p.vendor()) << "\""
-       " summary=\"" << xml_encode(p.summary()) << "\""
-       " shortname=\"" << xml_encode(p.shortName()) << "\""
-       " flavor=\"" << xml_encode(p.flavor()) << "\""
-       " isbase=\"" << (p.isTargetDistribution() ? 1 : 0) << "\""
-       " repo=\"" << xml_encode(p.repoInfo().alias()) << "\""
-       " installed=\"" << (is_installed ? 1 : 0) << "\"";
-  if (p.description().empty())
-    str << "/>";
-  else
-    str
-      << ">" << endl << "<description>" << p.description() << "</description>"
-      << endl << "</product>";
+  {
+    // Legacy: Encoded almost everything as attribute
+    // Think about using subnodes for new stuff.
+    xmlout::Node parent( str, "product", xmlout::Node::optionalContent, {
+      { "name", 	p.name() },
+      { "version",	p.edition().version() },
+      { "release",	p.edition().release() },
+      { "epoch",	p.edition().epoch() },
+      { "arch",		p.arch() },
+      { "vendor",	p.vendor() },
+      { "summary",	p.summary() },
+      { "repo",		p.repoInfo().alias() },
+      // ^^^ common --- specific vvv
+      { "productline",	p.productLine() },
+      { "registerrelease",p.registerRelease() },
+      { "shortname",	p.shortName() },
+      { "flavor",	p.flavor() },
+      { "isbase",	p.isTargetDistribution() },
+      { "installed",	is_installed },
+    } );
+
+    dumpAsXmlOn( *parent, p.endOfLife(), "endoflife" );
+    {
+      const std::string & text( p.description() );
+      if ( ! text.empty() )
+	*xmlout::Node( *parent, "description" ) << xml::escape( text );
+    }
+  }
   return str.str();
 }
 
 string asXML(const Pattern & p, bool is_installed)
 {
   ostringstream str;
-  str
-    << "<pattern"
-       " name=\"" << xml_encode(p.name()) << "\""
-       " version=\"" << p.edition().version() << "\""
-       " release=\"" << p.edition().release() << "\""
-       " epoch=\"" << p.edition().epoch() << "\""
-       " arch=\"" << p.arch() << "\""
-       " vendor=\"" << xml_encode(p.vendor()) << "\""
-       " summary=\"" << xml_encode(p.summary()) << "\""
-       " repo=\"" << xml_encode(p.repoInfo().alias()) << "\""
-       " installed=\"" << (is_installed ? 1 : 0) << "\""
-       " uservisible=\"" << (p.userVisible() ? 1 : 0) << "\"";
-  if (p.description().empty())
-    str << "/>";
-  else
-    str
-      << ">" << endl << "<description>" << p.description() << "</description>"
-      << endl << "</pattern>";
+  {
+    // Legacy: Encoded almost everything as attribute
+    // Think about using subnodes for new stuff.
+    xmlout::Node parent( str, "pattern", xmlout::Node::optionalContent, {
+      { "name",		p.name() },
+      { "version",	p.edition().version() },
+      { "release",	p.edition().release() },
+      { "epoch",	p.edition().epoch() },
+      { "arch",		p.arch() },
+      { "vendor",	p.vendor() },
+      { "summary",	p.summary() },
+      { "repo",		p.repoInfo().alias() },
+      // ^^^ common --- specific vvv
+      { "installed",	is_installed },
+      { "uservisible",	p.userVisible() },
+    } );
+    {
+      const std::string & text( p.description() );
+      if ( ! text.empty() )
+	*xmlout::Node( *parent, "description" ) << xml::escape( text );
+    }
+  }
   return str.str();
 }
 
@@ -454,6 +461,14 @@ void list_processes_using_deleted_files(Zypper & zypper)
         _("See '%s' for information about the meaning of values"
           " in the above table."),
         "man zypper"));
+  }
+
+  if ( geteuid() != 0 )
+  {
+    zypper.out().info("");
+    zypper.out().info(_("Note: Not running as root you are limited to searching for files"
+                        " you have permission to examine with the system stat(2) function."
+                        " The result might be incomplete."));
   }
 }
 

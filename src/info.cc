@@ -9,20 +9,21 @@
 
 #include <boost/format.hpp>
 
-#include "zypp/ZYpp.h"
-#include "zypp/base/Algorithm.h"
-#include "zypp/Package.h"
-#include "zypp/Patch.h"
-#include "zypp/Pattern.h"
-#include "zypp/Product.h"
-#include "zypp/PoolQuery.h"
+// #include <zypp/base/LogTools.h>
+#include <zypp/base/Algorithm.h>
+#include <zypp/ZYpp.h>
+#include <zypp/Package.h>
+#include <zypp/Patch.h>
+#include <zypp/Pattern.h>
+#include <zypp/Product.h>
+#include <zypp/PoolQuery.h>
 
 #include "Zypper.h"
 #include "main.h"
 //#include "misc.h"
 #include "Table.h"
-#include "utils/richtext.h"
 #include "utils/misc.h" // for kind_to_string_localized and string_patch_status
+#include "utils/text.h"
 #include "search.h"
 #include "update.h"
 
@@ -34,6 +35,41 @@ using boost::format;
 
 extern ZYpp::Ptr God;
 
+void printPkgInfo(Zypper & zypper, const zypp::ui::Selectable & s);
+void printPatchInfo(Zypper & zypper, const zypp::ui::Selectable & s);
+void printPatternInfo(Zypper & zypper, const zypp::ui::Selectable & s);
+void printProductInfo(Zypper & zypper, const zypp::ui::Selectable & s);
+
+///////////////////////////////////////////////////////////////////
+namespace
+{
+  inline std::string asCliOption( Dep dep_r )
+  { return dep_r.asString(); }
+
+  inline std::string asInfoTag( Dep dep_r )
+  { return dep_r.asUserString(); }
+
+  inline const std::vector<Dep> & cliSupportedDepTypes()
+  {
+    static const std::vector<Dep> _deps = {
+      Dep::PROVIDES,
+      Dep::REQUIRES,
+      Dep::CONFLICTS,
+      Dep::OBSOLETES,
+      Dep::RECOMMENDS,
+      Dep::SUGGESTS
+    };
+    return _deps;
+  }
+
+  inline void printDepList( const PoolItem & pi_r, Dep dep_r )
+  {
+    cout << asInfoTag( dep_r ) << ':' << endl;
+    for ( auto && cap : pi_r->dep( dep_r ) )
+    { cout << "  " << cap << endl; }
+  }
+} // namespace out
+///////////////////////////////////////////////////////////////////
 
 void printNVA(const ResObject::constPtr & res)
 {
@@ -47,15 +83,7 @@ void printSummaryDesc(const ResObject::constPtr & res)
 {
   cout << _("Summary: ") << res->summary() << endl;
   cout << _("Description: ") << endl;
-  const string& s = res->description();
-  if (s.find("DT:Rich")!=s.npos){
-    string ns = processRichText(s);
-    cout << ns << endl;
-  }
-  else
-  {
-    cout << s << endl;
-  }
+  Zypper::instance()->out().printRichText( res->description(), 2/*indented*/ );
 }
 
 /**
@@ -73,7 +101,16 @@ void printInfo(Zypper & zypper, const ResKind & kind)
     PoolQuery q;
     q.addKind(kind);
     q.addAttribute(sat::SolvAttr::name, *nameit);
-    q.setMatchExact();
+
+    if ( !zypper.cOpts().count("match-substrings") )
+    {
+      q.setMatchExact();
+    }
+
+    if ( (*nameit).find_first_of("?*") != string::npos )
+    {
+      q.setMatchGlob();
+    }
 
     if (q.empty())
     {
@@ -85,69 +122,39 @@ void printInfo(Zypper & zypper, const ResKind & kind)
     }
     else
     {
-      ui::Selectable::constPtr s = *q.selectableBegin();
-      // print info
-      // TranslatorExplanation E.g. "Information for package zypper:"
-
-      if (zypper.out().type() != Out::TYPE_XML)
+      for ( zypp::PoolQuery::Selectable_iterator it = q.selectableBegin();
+	     it != q.selectableEnd(); it++)
       {
-        cout << endl << format(_("Information for %s %s:"))
-            % kind_to_string_localized(kind, 1) % *nameit;
+        // print info
+        // TranslatorExplanation E.g. "Information for package zypper:"
 
-        cout << endl << endl;
+        if (zypper.out().type() != Out::TYPE_XML)
+        {
+          string info = boost::str( format(_("Information for %s %s:"))
+                                    % kind_to_string_localized(kind, 1)
+                                    % (*it)->name() );
+
+          cout << endl << info << endl;
+          cout << string( mbs_width(info), '-' ) << endl;
+        }
+
+        if (kind == ResKind::package)
+          printPkgInfo(zypper, *(*it));
+        else if (kind == ResKind::patch)
+          printPatchInfo(zypper, *(*it));
+        else if (kind == ResKind::pattern)
+          printPatternInfo(zypper, *(*it));
+        else if (kind == ResKind::product)
+          printProductInfo(zypper, *(*it));
+        else
+          // TranslatorExplanation %s = resolvable type (package, patch, pattern, etc - untranslated).
+          zypper.out().info(
+                            boost::str(format(_("Info for type '%s' not implemented.")) % kind));
       }
-
-      if (kind == ResKind::package)
-        printPkgInfo(zypper, *s);
-      else if (kind == ResKind::patch)
-        printPatchInfo(zypper, *s);
-      else if (kind == ResKind::pattern)
-        printPatternInfo(zypper, *s);
-      else if (kind == ResKind::product)
-        printProductInfo(zypper, *s);
-      else
-        // TranslatorExplanation %s = resolvable type (package, patch, pattern, etc - untranslated).
-        zypper.out().info(
-          boost::str(format(_("Info for type '%s' not implemented.")) % kind));
     }
   }
-
-  if (false)
-  {
-    string s00 = _("None");
-    string s0 = _("Requires");
-    string s1 = _("Provides");
-    string s2 = _("Conflicts");
-    string s3 = _("Obsoletes");
-    // translators: package requirements table header
-    string s4 = _("Requirement");
-    // translators: package requirements table header
-    string s5 = _("Provided By");
-    // translators: package conflicts table header
-    string s6 = _("Conflict");
-  }
 }
 
-static void printRequires(const PoolItem & pi)
-{
-  cout << _("Requires:") << endl;
-  std::list<Capability> capList = std::list<Capability>(pi->prerequires().begin(), pi->prerequires().end());
-  capList.assign(pi->requires().begin(), pi->requires().end());
-  for (std::list<Capability>::const_iterator it = capList.begin(); it != capList.end(); ++it)
-  {
-    cout << *it << endl;
-  }
-}
-
-static void printRecommends(const PoolItem & pi)
-{
-  cout << _("Recommends:") << endl;
-  Capabilities capSet = pi->recommends();
-  for (Capabilities::const_iterator it = capSet.begin(); it != capSet.end(); ++it)
-  {
-    cout << *it << endl;
-  }
-}
 
 /**
  * Print package information.
@@ -170,38 +177,47 @@ Copy and modify /usr/share/vim/current/gvimrc to ~/.gvimrc if needed.
  */
 void printPkgInfo(Zypper & zypper, const ui::Selectable & s)
 {
-  PoolItem installed = s.installedObj();
-  PoolItem theone = s.updateCandidateObj();
-  if (!theone)
-    theone = installed;
-  Package::constPtr pkg = asKind<Package>(theone.resolvable());
+  PoolItem installed( s.installedObj() );
+  PoolItem updateCand( s.updateCandidateObj() );
+  // An updateCandidate is always better than any installed object.
+  // If the best version is already installed try to look it up in
+  // the repo it came from, otherwise use the installed one.
+  PoolItem theone( updateCand );
+  if ( !theone )
+  {
+    theone = s.identicalAvailableObj( installed );
+    if ( !theone )
+      theone = installed;
+  }
 
   cout << (zypper.globalOpts().is_rug_compatible ? _("Catalog: ") : _("Repository: "))
-       << (zypper.config().show_alias ?
-           theone.resolvable()->repository().info().alias() :
-           theone.resolvable()->repository().info().name()) << endl;
+       << theone.resolvable()->repository().asUserString() << endl;
 
   printNVA(theone.resolvable());
 
   // if running on SUSE Linux Enterprise, report unsupported packages
   Product::constPtr platform = God->target()->baseProduct();
   if (platform && platform->name().find("SUSE_SLE") != string::npos)
+  {
+    Package::constPtr pkg = asKind<Package>(theone.resolvable());
     cout << _("Support Level: ") << asUserString(pkg->vendorSupport()) << endl;
+  }
 
   cout << _("Installed: ") << (installed ? _("Yes") : _("No")) << endl;
 
-  //! \todo fix this - arch?
   cout << _("Status: ");
-  if (installed &&
-      installed.resolvable()->edition() >= theone.resolvable()->edition())
+  if ( installed )
   {
-    cout << _("up-to-date") << endl;
-  }
-  else if (installed)
-  {
-    cout << str::form(_("out-of-date (version %s installed)"),
-        installed.resolvable()->edition().asString().c_str())
-      << endl;
+    if ( updateCand )
+    {
+      cout << str::form(_("out-of-date (version %s installed)"),
+			installed.resolvable()->edition().asString().c_str())
+           << endl;
+    }
+    else
+    {
+      cout << _("up-to-date") << endl;
+    }
   }
   else
     cout << _("not installed") << endl;
@@ -210,19 +226,9 @@ void printPkgInfo(Zypper & zypper, const ui::Selectable & s)
 
   printSummaryDesc(theone.resolvable());
 
-  bool requires = zypper.cOpts().count("requires");
-  bool recommends = zypper.cOpts().count("recommends");
-
-  if (requires)
-    printRequires(theone);
-
-  if (recommends)
-  {
-    if (requires)
-      cout << endl; // visual separator
-
-    printRecommends(theone);
-  }
+  // Print dependency lists if CLI requests it
+  for ( auto && dep : cliSupportedDepTypes() )
+  { if ( zypper.cOpts().count( asCliOption( dep ) ) ) printDepList( theone, dep ); }
 }
 
 /**
@@ -258,6 +264,7 @@ void printPatchInfo(Zypper & zypper, const ui::Selectable & s )
 
   Patch::constPtr patch = asKind<Patch>(pool_item.resolvable());
   cout << _("Category: ") << patch->category() << endl;
+  cout << _("Severity: ") << patch->severity() << endl;
   cout << _("Created On: ") << patch->timestamp().asString() << endl;
   cout << _("Reboot Required: ") << (patch->rebootSuggested() ? _("Yes") : _("No")) << endl;
 
@@ -270,33 +277,26 @@ void printPatchInfo(Zypper & zypper, const ui::Selectable & s )
   Patch::InteractiveFlags ignoreFlags = Patch::NoFlags;
   if (zypper.globalOpts().reboot_req_non_interactive)
     ignoreFlags |= Patch::Reboot;
+  if ( zypper.cOpts().count("auto-agree-with-licenses") || zypper.cOpts().count("agree-to-third-party-licenses") )
+    ignoreFlags |= Patch::License;
 
   cout << _("Interactive: ") << (patch->interactiveWhenIgnoring(ignoreFlags) ? _("Yes") : _("No")) << endl;
 
   printSummaryDesc(pool_item.resolvable());
 
-  cout << _("Provides:") << endl;
-  Capabilities capSet = pool_item.resolvable()->dep(zypp::Dep::PROVIDES);
-  // WhatProvides can be used here. The result can be represented as a table of
-  // a "Capability" (it->asString()) | "Provided By" (WhatProvides(c))
-  for (Capabilities::const_iterator it = capSet.begin(); it != capSet.end(); ++it)
-    cout << *it << endl;
-
-  cout << endl << _("Conflicts:") << endl;
-  capSet = pool_item.resolvable()->dep(zypp::Dep::CONFLICTS);
-  for (Capabilities::const_iterator it = capSet.begin(); it != capSet.end(); ++it)
-    cout << *it << endl;
-
-  if (zypper.cOpts().count("requires"))
+  // Print dependency lists if CLI requests it
+  for ( auto && dep : cliSupportedDepTypes() )
   {
-    cout << endl; // visual separator
-    printRequires(pool_item);
-  }
-
-  if (zypper.cOpts().count("recommends"))
-  {
-    cout << endl; // visual separator
-    printRecommends(pool_item);
+    switch ( dep.inSwitch() )
+    {
+      case Dep::PROVIDES_e:
+      case Dep::CONFLICTS_e:
+	printDepList( pool_item, dep );	// These dependency lists are always printed
+	break;
+      default:
+	if ( zypper.cOpts().count( asCliOption( dep ) ) ) printDepList( pool_item, dep );
+	break;
+    }
   }
 }
 
@@ -331,19 +331,25 @@ void printPatternInfo(Zypper & zypper, const ui::Selectable & s)
 {
   const PoolItem & pool_item = s.theObj();
 
+  if ( !pool_item.resolvable()->isKind<Pattern>() )
+    return;
+
   cout << (zypper.globalOpts().is_rug_compatible ? _("Catalog: ") : _("Repository: "))
-       << (zypper.config().show_alias ?
-           pool_item.resolvable()->repository().info().alias() :
-           pool_item.resolvable()->repository().info().name()) << endl;
+       << pool_item.resolvable()->repository().asUserString() << endl;
 
   printNVA(pool_item.resolvable());
 
-  cout << _("Installed: ") << (pool_item.isSatisfied() ? _("Yes") : _("No")) << endl;
+  cout << _("Installed: ") << (s.hasInstalledObj() ? _("Yes") : _("No")) << endl;
+  cout << _("Visible to User: ") << (pool_item.resolvable()->asKind<Pattern>()->userVisible() ? _("Yes") : _("No")) << endl;
 
   printSummaryDesc(pool_item.resolvable());
 
   if (zypper.globalOpts().is_rug_compatible)
     return;
+
+  // Print dependency lists if CLI requests it
+  for ( auto && dep : cliSupportedDepTypes() )
+  { if ( zypper.cOpts().count( asCliOption( dep ) ) ) printDepList( pool_item, dep ); }
 
   // show contents
   Table t;
@@ -354,7 +360,7 @@ void printPatternInfo(Zypper & zypper, const ui::Selectable & s)
   //God->resolver()->solve();
 
   Pattern::constPtr pattern = asKind<Pattern>(pool_item.resolvable());
-  Pattern::Contents contents = pattern->contents();
+  Pattern::Contents contents = pattern->contentsNoSuggests();	// (bnc#857671) don't include suggests as we can not deal with them .
   for_(sit, contents.selectableBegin(), contents.selectableEnd())
   {
     const ui::Selectable & s = **sit;
@@ -370,7 +376,10 @@ void printPatternInfo(Zypper & zypper, const ui::Selectable & s)
   if (t.empty())
     cout << " " << _("(empty)") << endl;
   else
+  {
+    t.sort( 1 );
     cout << endl << endl << t;
+  }
 }
 
 /**
@@ -405,22 +414,78 @@ void printProductInfo(Zypper & zypper, const ui::Selectable & s)
   else
   {
     cout << (zypper.globalOpts().is_rug_compatible ? _("Catalog: ") : _("Repository: "))
-         << (zypper.config().show_alias ?
-             pool_item.resolvable()->repository().info().alias() :
-             pool_item.resolvable()->repository().info().name()) << endl;
+         << pool_item.resolvable()->repository().asUserString() << endl;
 
     printNVA(pool_item.resolvable());
 
-    Product::constPtr product = asKind<Product>(pool_item.resolvable());
-    cout << _("Is Base")   << ": "
-      << (product->isTargetDistribution()  ? _("Yes") : _("No")) << endl;
-    cout << _("Flavor")     << ": "
-      << product->flavor() << endl;
-    cout << _("Installed")  << ": "
-      << (pool_item.status().isInstalled() ? _("Yes") : _("No")) << endl;
-    cout << _("Short Name")
-      << ": " << product->shortName() << endl;
+    PoolItem installed;
+    if (!s.installedEmpty())
+      installed = s.installedObj();
+
+    Product::constPtr product;
+    if ( installed )
+      product = asKind<Product>(installed);
+    else
+      product = asKind<Product>(pool_item.resolvable());
+
+    cout << _("Flavor") << ": "  << product->flavor() << endl;
+
+    cout << _("Short Name") << ": " << product->shortName() << endl;
+
+    cout << _("Installed")  << ": " << ( installed ? _("Yes") : _("No") )<< endl;
+
+    cout << _("Is Base")   << ": " << (product->isTargetDistribution()  ? _("Yes") : _("No")) << endl;
+
+    {
+      Date eol( product->endOfLife() );
+      cout << _("End of Support") << ": " << ( eol ? eol.printDate() : _("undefined") ) << endl;
+    }
+    {
+      cout << _("CPE Name") << ": ";
+      const CpeId & cpe( product->cpeId() );
+      if ( cpe )
+	cout << cpe << endl;
+      else if ( CpeId::NoThrowType::lastMalformed.empty() )
+	cout <<  _("undefined") << endl;
+      else
+	colBad() <<  _("invalid CPE Name") << ": " << CpeId::NoThrowType::lastMalformed << endl;
+    }
+    {
+      cout << _("Update Repositories");
+      std::list<Repository::ContentIdentifier> l;
+      unsigned cl = product->updateContentIdentifierSize( l );
+      if ( cl )
+      {
+	cout << ": " << cl << endl;
+	unsigned n = 0;
+	for ( const auto & el : l )
+	{
+	  cout << "[" << ++n << "] " << _("Content Id")   << ": " << el << endl;
+	  bool found = false;
+	  for_( it, sat::Pool::instance().reposBegin(), sat::Pool::instance().reposEnd() )
+	  {
+	    if ( (*it).hasContentIdentifier( el ) )
+	    {
+	      found = true;
+	      cout << "    " << _("Provided by enabled repository")   << ": " << (*it).name() << endl;
+
+	    }
+	  }
+	  if ( ! found )
+	  {
+	    colNote() << "    " << _("Not provided by any enabled repository")   << endl;
+	  }
+	}
+      }
+      else
+	cout << ": " << _("undefined") << endl;
+    }
+
     printSummaryDesc(pool_item.resolvable());
+
+    // Print dependency lists if CLI requests it
+    for ( auto && dep : cliSupportedDepTypes() )
+    { if ( zypper.cOpts().count( asCliOption( dep ) ) ) printDepList( pool_item, dep ); }
   }
 }
 

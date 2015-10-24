@@ -11,9 +11,10 @@
 
 #include <unistd.h>
 
-#include "zypp/Pathname.h"
-#include "zypp/ByteCount.h" // for download progress reporting
-#include "zypp/base/String.h" // for toUpper()
+#include <zypp/Pathname.h>
+#include <zypp/ByteCount.h> // for download progress reporting
+#include <zypp/base/Logger.h>
+#include <zypp/base/String.h> // for toUpper()
 
 #include "main.h"
 #include "utils/colors.h"
@@ -23,8 +24,8 @@
 
 using namespace std;
 
-OutNormal::OutNormal(Verbosity verbosity)
-  : Out(TYPE_NORMAL, verbosity),
+OutNormal::OutNormal(Verbosity verbosity_r)
+  : Out(TYPE_NORMAL, verbosity_r),
     _use_colors(false), _isatty(isatty(STDOUT_FILENO)), _newline(true), _oneup(false)
 {}
 
@@ -41,25 +42,29 @@ bool OutNormal::mine(Type type)
   return false;
 }
 
-bool OutNormal::infoWarningFilter(Verbosity verbosity, Type mask)
+bool OutNormal::infoWarningFilter(Verbosity verbosity_r, Type mask)
 {
   if (!mine(mask))
     return true;
-  if (this->verbosity() < verbosity)
+  if (verbosity() < verbosity_r)
     return true;
   return false;
 }
 
-void OutNormal::info(const std::string & msg, Verbosity verbosity, Type mask)
+void OutNormal::info(const std::string & msg, Verbosity verbosity_r, Type mask)
 {
-  if (infoWarningFilter(verbosity, mask))
+  if (infoWarningFilter(verbosity_r, mask))
     return;
 
   if (!_newline)
     cout << endl;
 
-  if (verbosity == Out::QUIET)
+  if (verbosity_r == Out::QUIET)
     print_color(msg, COLOR_CONTEXT_RESULT);
+  else if (verbosity_r == Out::DEBUG)
+  {
+    print_color(msg, COLOR_CONTEXT_OSDEBUG);
+  }
   else
     print_color(msg, COLOR_CONTEXT_MSG_STATUS);
 
@@ -67,9 +72,12 @@ void OutNormal::info(const std::string & msg, Verbosity verbosity, Type mask)
   _newline = true;
 }
 
-void OutNormal::warning(const std::string & msg, Verbosity verbosity, Type mask)
+void OutNormal::infoLine( const TermLine & msg, Verbosity verbosity_r, Type mask )
+{ info( msg.get( termwidth() ), verbosity_r, mask ); }
+
+void OutNormal::warning(const std::string & msg, Verbosity verbosity_r, Type mask)
 {
-  if (infoWarningFilter(verbosity, mask))
+  if (infoWarningFilter(verbosity_r, mask))
     return;
 
   if (!_newline)
@@ -86,7 +94,7 @@ void OutNormal::error(const std::string & problem_desc, const std::string & hint
     cout << endl;
 
   fprint_color(cerr, problem_desc, COLOR_CONTEXT_MSG_ERROR);
-  if (!hint.empty() && this->verbosity() > Out::QUIET)
+  if (!hint.empty() && verbosity() > Out::QUIET)
     cerr << endl << hint;
   cerr << endl;
   _newline = true;
@@ -109,7 +117,7 @@ void OutNormal::error(const zypp::Exception & e,
   cerr << endl;
 
   // hint
-  if (!hint.empty() && this->verbosity() > Out::QUIET)
+  if (!hint.empty() && verbosity() > Out::QUIET)
     cerr << hint << endl;
 
   _newline = true;
@@ -123,31 +131,27 @@ void OutNormal::displayProgress (const string & s, int percent)
 
   if (_isatty)
   {
-    string outline = s + " [";
+    TermLine outstr( TermLine::SF_CRUSH | TermLine::SF_EXPAND, '-' );
+    outstr.lhs << s << ' ';
+
     // dont display percents if invalid
-    if (percent >= 0 && percent <= 100)
+    if ( percent >= 0 && percent <= 100 )
     {
-      std::ostringstream oss;
-      oss << percent << "%";
-      outline += oss.str();
+      outstr.percentHint = percent;
     }
-    else
-    {
-      ++cursor;
-      outline += cursor.current();
-    }
-    outline += "]";
+    ++cursor;
+    outstr.rhs << '[' << cursor.current() << ']';
 
     if(_oneup)
-      cout << CLEARLN << CURSORUP(1) << CLEARLN << outline;
-    else
-      cout << CLEARLN << outline;
+      cout << CLEARLN << CURSORUP(1);
+    cout << CLEARLN;
 
-    _oneup = (outline.length() >= termwidth());
+    std::string outline( outstr.get( termwidth() ) );
+    cout << outline << std::flush;
+    // no _oneup if CRUSHed // _oneup = ( outline.length() > termwidth() );
   }
   else
-    cout << '.';
-  cout << std::flush;
+    cout << '.' << std::flush;
 }
 
 // ----------------------------------------------------------------------------
@@ -158,20 +162,21 @@ void OutNormal::displayTick (const string & s)
 
   if (_isatty)
   {
-    string outline = s + " [";
+    TermLine outstr( TermLine::SF_CRUSH | TermLine::SF_EXPAND, '-' );
     ++cursor;
-    outline += cursor.current();
-    outline += "]";
-    if(_oneup)
-      cout << CLEARLN << CURSORUP(1) << CLEARLN << outline;
-    else
-      cout << CLEARLN << outline;
+    outstr.lhs << s << ' ';
+    outstr.rhs << '[' << cursor.current() << ']';
 
-    _oneup = (outline.length() >= termwidth());
+    if(_oneup)
+      cout << CLEARLN << CURSORUP(1);
+    cout << CLEARLN;
+
+    std::string outline( outstr.get( termwidth() ) );
+    cout << outline << std::flush;
+    // no _oneup if CRUSHed // _oneup = ( outline.length() > termwidth() );
   }
   else
-    cout << '.';
-  cout << std::flush;
+    cout << '.' << std::flush;
 }
 
 // ----------------------------------------------------------------------------
@@ -215,30 +220,40 @@ void OutNormal::progressEnd(const std::string & id, const string & label, bool e
   if (!error && _use_colors)
     cout << get_color(COLOR_CONTEXT_MSG_STATUS);
 
+  TermLine outstr( TermLine::SF_CRUSH | TermLine::SF_EXPAND, '.' );
   if (_isatty)
   {
     if(_oneup)
     {
-      cout << CLEARLN << CURSORUP(1) << CLEARLN;
+      cout << CLEARLN << CURSORUP(1);
       _oneup = false;
     }
+    cout << CLEARLN;
+
+    outstr.lhs << label << ' ';
+    outstr.rhs << '[';
+    if (error)
+    {
+      // a bit clmupsy and not perfect: hidden char counting
+      unsigned tag( std::string(outstr.rhs).size() );
+      std::string errstr( _("error") );
+      fprint_color(outstr.rhs._str, errstr, COLOR_CONTEXT_NEGATIVE);
+      outstr.rhidden += unsigned(std::string(outstr.rhs).size() - errstr.size()) - tag ;
+    }
     else
-      cout << CLEARLN;
-    cout << label << " [";
+      outstr.rhs << _("done");
   }
-
-  if (error)
-    print_color(_("error"), COLOR_CONTEXT_NEGATIVE);
   else
-    cout << _("done");
+    outstr.rhs << (error ? _("error") : _("done"));
 
-  cout << "]";
+  outstr.rhs << ']';
+
+  std::string outline( outstr.get( termwidth() ) );
+  cout << outline << endl << std::flush;
+  _newline = true;
 
   if (!error && _use_colors)
     cout << COLOR_RESET;
-
-  cout << endl << std::flush;
-  _newline = true;
 }
 
 // progress with download rate
@@ -249,17 +264,23 @@ void OutNormal::dwnldProgressStart(const zypp::Url & uri)
 
   if (_isatty)
     cout << CLEARLN;
-  cout << _("Retrieving:") << " ";
-  if (verbosity() == DEBUG)
-    cout << uri; //! \todo shorten to fit the width of the terminal
-  else
-    cout << zypp::Pathname(uri.getPathName()).basename();
-  if (_isatty)
-    cout << " [" << _("starting") << "]"; //! \todo align to the right
-  else
-    cout << " [" ;
 
-  cout << std::flush;
+  TermLine outstr( TermLine::SF_CRUSH | TermLine::SF_EXPAND, '-' );
+  outstr.lhs << _("Retrieving:") << ' ';
+  if (verbosity() == DEBUG)
+    outstr.lhs << uri;
+  else
+    outstr.lhs << zypp::Pathname(uri.getPathName()).basename();
+  outstr.lhs << ' ';
+  if (_isatty)
+    outstr.rhs << '[' << _("starting") << ']';
+  else
+    outstr.rhs << '[' ;
+
+  std::string outline( outstr.get( termwidth() ) );
+  cout << outline << std::flush;
+  // no _oneup if CRUSHed // _oneup = (outline.length() > termwidth());
+
   _newline = false;
 }
 
@@ -276,23 +297,32 @@ void OutNormal::dwnldProgress(const zypp::Url & uri,
     return;
   }
 
-  cout << CLEARLN << _("Retrieving:") << " ";
-  if (verbosity() == DEBUG)
-    cout << uri; //! \todo shorten to fit the width of the terminal
-  else
-    cout << zypp::Pathname(uri.getPathName()).basename();
-  // dont display percents if invalid
-  if ((value >= 0 && value <= 100) || rate >= 0)
-  {
-    cout << " [";
-    if (value >= 0 && value <= 100)
-      cout << value << "%";
-    if (rate >= 0)
-      cout << " (" << zypp::ByteCount(rate) << "/s)";
-    cout << "]";
-  }
+  if(_oneup)
+    cout << CLEARLN << CURSORUP(1);
+  cout << CLEARLN;
 
-  cout << std::flush;
+  TermLine outstr( TermLine::SF_CRUSH | TermLine::SF_EXPAND, '-' );
+  outstr.lhs << _("Retrieving:") << " ";
+  if (verbosity() == DEBUG)
+    outstr.lhs << uri;
+  else
+    outstr.lhs << zypp::Pathname(uri.getPathName()).basename();
+   outstr.lhs << ' ';
+
+  // dont display percents if invalid
+  if ( value >= 0 && value <= 100 )
+    outstr.percentHint = value;
+
+  static AliveCursor cursor;
+  ++cursor;
+  outstr.rhs << '[' << cursor.current();
+  if (rate > 0 )
+    outstr.rhs << " (" << zypp::ByteCount(rate) << "/s)";
+  outstr.rhs << ']';
+
+  std::string outline( outstr.get( termwidth() ) );
+  cout << outline << std::flush;
+  // no _oneup if CRUSHed // _oneup = (outline.length() > termwidth());
   _newline = false;
 }
 
@@ -304,31 +334,43 @@ void OutNormal::dwnldProgressEnd(const zypp::Url & uri, long rate, bool error)
   if (!error && _use_colors)
     cout << get_color(COLOR_CONTEXT_MSG_STATUS);
 
+  TermLine outstr( TermLine::SF_CRUSH | TermLine::SF_EXPAND, '.' );
   if (_isatty)
   {
-    cout << CLEARLN << _("Retrieving:") << " ";
+    if(_oneup)
+      cout << CLEARLN << CURSORUP(1);
+    cout << CLEARLN;
+    outstr.lhs << _("Retrieving:") << " ";
     if (verbosity() == DEBUG)
-      cout << uri; //! \todo shorten to fit the width of the terminal
+      outstr.lhs << uri;
     else
-      cout << zypp::Pathname(uri.getPathName()).basename();
-    cout << " [";
+      outstr.lhs << zypp::Pathname(uri.getPathName()).basename();
+    outstr.lhs << ' ';
+    outstr.rhs << '[';
     if (error)
-      print_color(_("error"), COLOR_CONTEXT_NEGATIVE);
+    {
+      // a bit clmupsy and not perfect: hidden char counting
+      unsigned tag( std::string(outstr.rhs).size() );
+      std::string errstr( _("error") );
+      fprint_color(outstr.rhs._str, errstr, COLOR_CONTEXT_NEGATIVE);
+      outstr.rhidden += unsigned(std::string(outstr.rhs).size() - errstr.size()) - tag ;
+    }
     else
-      cout << _("done");
+      outstr.rhs << _("done");
   }
   else
-    cout << (error ? _("error") : _("done"));
+    outstr.rhs << (error ? _("error") : _("done"));
 
-  if (rate >= 0)
-    cout << " (" << zypp::ByteCount(rate) << "/s)";
-  cout << "]";
+  if (rate > 0)
+    outstr.rhs << " (" << zypp::ByteCount(rate) << "/s)";
+  outstr.rhs << ']';
+
+  std::string outline( outstr.get( termwidth() ) );
+  cout << outline << endl << std::flush;
+  _newline = true;
 
   if (!error && _use_colors)
     cout << COLOR_RESET;
-
-  cout << endl << std::flush;
-  _newline = true;
 }
 
 void OutNormal::prompt(PromptId id,
@@ -382,15 +424,13 @@ void OutNormal::promptHelp(const PromptOptions & poptions)
   _newline = true;
 }
 
-unsigned int OutNormal::termwidth() const {
-  if(!_isatty)
-    return 10000;
-  else
+unsigned OutNormal::termwidth() const
+{
+  if ( _isatty )
   {
     struct winsize wns;
     if (!ioctl(1, TIOCGWINSZ, &wns))
       return wns.ws_col;
-    else
-      return 10000;
   }
+  return Out::termwidth();	// unlimited
 }

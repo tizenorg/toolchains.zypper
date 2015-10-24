@@ -8,7 +8,8 @@
 #ifndef ZYPPERSEARCH_H_
 #define ZYPPERSEARCH_H_
 
-#include "zypp/TriBool.h"
+#include <zypp/TriBool.h>
+#include <zypp/PoolQuery.h>
 
 #include "Zypper.h"
 #include "Table.h"
@@ -26,13 +27,27 @@ struct FillSearchTableSolvable
   /** Aliases of repos specified as --repo */
   std::set<std::string> _repos;
   zypp::TriBool _inst_notinst;
-  bool _show_alias;
 
   FillSearchTableSolvable(
       Table & table,
       zypp::TriBool inst_notinst = zypp::indeterminate );
 
-  bool operator()(const zypp::ui::Selectable::constPtr & s) const;
+  /** Add all items within this Selectable */
+  bool operator()( const zypp::ui::Selectable::constPtr & sel ) const;
+  /** Add this PoolItem */
+  bool operator()( const zypp::PoolItem & pi ) const;
+  /** Add this Solvable */
+  bool operator()( zypp::sat::Solvable solv ) const;
+  /** PoolQuery iterator provides info about matches*/
+  bool operator()( const zypp::PoolQuery::const_iterator & it ) const;
+
+  /** Helper to add a table row for \a sel's picklist item \c pi
+   * \return whether a row was actually added.
+   * \note picklist item means that \a pi must not be an installed
+   * item in \a sel, if there is an identical available one. The
+   * code relies on this.
+   */
+  bool addPicklistItem( const zypp::ui::Selectable::constPtr & sel, const zypp::PoolItem & pi ) const;
 };
 
 struct FillSearchTableSelectable
@@ -60,8 +75,7 @@ struct FillPatchesTable
   Table * _table;
   const GlobalOptions & _gopts;
   zypp::TriBool _inst_notinst;
-  bool _show_alias;
-  
+
   FillPatchesTable( Table & table,
       zypp::TriBool inst_notinst = zypp::indeterminate );
 

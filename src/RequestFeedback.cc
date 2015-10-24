@@ -9,8 +9,8 @@
  *
  */
 
-#include "zypp/base/LogTools.h"
-#include "zypp/ui/Selectable.h"
+#include <zypp/base/LogTools.h>
+#include <zypp/ui/Selectable.h>
 
 #include "Zypper.h"
 #include "misc.h"
@@ -68,20 +68,25 @@ string SolverRequester::Feedback::asUserString(
         return str::form(_("Object '%s' not found in specified repositories."), _reqpkg.orig_str.c_str());
     }
   case NOT_FOUND_CAP:
+  {
     // translators: meaning a package %s or provider of capability %s
-    return str::form(_("No provider of '%s' found."), _reqpkg.parsed_cap.asString().c_str());
+    std::string ret( str::form(_("No provider of '%s' found."), _reqpkg.orig_str.c_str()) );
+    if ( _reqpkg.orig_str.find("debuginfo") != std::string::npos )
+      ret += " ['--plus-content debug'?]";
+    return ret;
+  }
 
   case NOT_INSTALLED:
     if (_reqpkg.orig_str.find_first_of("?*") != string::npos) // wildcards used
       return str::form(
-        _("No package matching '%s' are installed."), _reqpkg.orig_str.c_str());
+        _("No package matching '%s' is installed."), _reqpkg.orig_str.c_str());
     else
       return str::form(
         _("Package '%s' is not installed."), _reqpkg.orig_str.c_str());
 
   case NO_INSTALLED_PROVIDER:
     // translators: meaning provider of capability %s
-    return str::form(_("No provider of '%s' is installed."), _reqpkg.parsed_cap.asString().c_str());
+    return str::form(_("No provider of '%s' is installed."), _reqpkg.orig_str.c_str());
 
   case ALREADY_INSTALLED:
     // TODO Package/Pattern/Patch/Product
@@ -112,7 +117,7 @@ string SolverRequester::Feedback::asUserString(
     PoolItem highest = asSelectable()(_objsel)->highestAvailableVersionObj();
     return str::form(
         _("There is an update candidate '%s' for '%s', but it does not match"
-          " specified version, architecture, or repository."),
+          " the specified version, architecture, or repository."),
         poolitem_user_string(highest).c_str(),
         poolitem_user_string(_objinst).c_str());
   }
@@ -124,7 +129,7 @@ string SolverRequester::Feedback::asUserString(
     cmdhint << "zypper install " << poolitem_user_string(highest);
 
     return str::form(
-      _("There is an update candidate for '%s', but it is from different"
+      _("There is an update candidate for '%s', but it is from a different"
         " vendor. Use '%s' to install this candidate."),
         _objinst->name().c_str(), cmdhint.str().c_str());
   }
@@ -137,8 +142,8 @@ string SolverRequester::Feedback::asUserString(
         << "-" << highest->edition() << "." << highest->arch();
 
     return str::form(
-      _("There is an update candidate for '%s', but it comes from repository"
-         " with lower priority. Use '%s' to install this candidate."),
+      _("There is an update candidate for '%s', but it comes from a repository"
+         " with a lower priority. Use '%s' to install this candidate."),
         _objinst->name().c_str(), cmdhint.str().c_str());
   }
 
@@ -165,7 +170,7 @@ string SolverRequester::Feedback::asUserString(
   case SELECTED_IS_OLDER:
   {
     ostringstream cmdhint;
-    cmdhint << "zypper install --force " << _objsel->name() << "-" << _objsel->edition()
+    cmdhint << "zypper install --oldpackage " << _objsel->name() << "-" << _objsel->edition()
         << "." << _objsel->arch();
 
     ostringstream msg;
@@ -173,12 +178,10 @@ string SolverRequester::Feedback::asUserString(
       "The selected package '%s' from repository '%s' has lower"
       " version than the installed one."),
       resolvable_user_string(*_objsel.resolvable()).c_str(),
-      Zypper::instance()->config().show_alias ?
-          _objsel->repoInfo().alias().c_str() :
-          _objsel->repoInfo().name().c_str());
+      _objsel->repoInfo().asUserString().c_str() );
     msg << " ";
     msg << str::form(
-        // translators: %s = "zypper install --force package-version.arch"
+        // translators: %s = "zypper install --oldpackage package-version.arch"
         _("Use '%s' to force installation of the package."), cmdhint.str().c_str());
     return msg.str();
   }
@@ -228,21 +231,26 @@ string SolverRequester::Feedback::asUserString(
     return str::form(
         _("Selecting '%s' from repository '%s' for installation."),
         resolvable_user_string(*_objsel.resolvable()).c_str(),
-        Zypper::instance()->config().show_alias ?
-            _objsel->repoInfo().alias().c_str() :
-            _objsel->repoInfo().name().c_str());
+        _objsel->repoInfo().asUserString().c_str() );
 
   case FORCED_INSTALL:
     return str::form(
         _("Forcing installation of '%s' from repository '%s'."),
         resolvable_user_string(*_objsel.resolvable()).c_str(),
-        Zypper::instance()->config().show_alias ?
-            _objsel->repoInfo().alias().c_str() :
-            _objsel->repoInfo().name().c_str());
+        _objsel->repoInfo().asUserString().c_str() );
 
   case SET_TO_REMOVE:
     return str::form(_("Selecting '%s' for removal."),
         resolvable_user_string(*_objsel.resolvable()).c_str());
+
+  case INSTALLED_LOCKED:
+  {
+    ostringstream cmdhint;
+    cmdhint << "zypper removelock " << _objsel->name();
+    return str::form(
+        _("'%s' is locked. Use '%s' to unlock it."),
+        _objsel->name().c_str(), cmdhint.str().c_str());
+  }
 
   case ADDED_REQUIREMENT:
     return str::form(_("Adding requirement: '%s'."), _reqpkg.parsed_cap.asString().c_str());
@@ -290,6 +298,9 @@ void SolverRequester::Feedback::print(
   case ADDED_REQUIREMENT:
   case ADDED_CONFLICT:
     out.info(asUserString(opts), Out::HIGH);
+    break;
+  case INSTALLED_LOCKED:
+    out.warning(asUserString(opts), Out::HIGH);
     break;
   case PATCH_INTERACTIVE_SKIPPED:
     out.warning(asUserString(opts));

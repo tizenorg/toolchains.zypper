@@ -27,6 +27,11 @@ public:
   virtual void info(const std::string & msg, Verbosity verbosity = NORMAL, Type mask = TYPE_ALL);
 
   /**
+   * Prints info message optionally trunkated or expanded.
+   */
+  virtual void infoLine(const TermLine & msg, Verbosity verbosity = NORMAL, Type mask = TYPE_ALL);
+
+  /**
    * Prints \a msg prepended with <tt>"Warning: "</tt> to the standard output
    * and appends a newline.
    *
@@ -75,13 +80,13 @@ public:
 protected:
   virtual bool mine(Type type);
 
+  /* Return current terminal width or 'unsigned(-1)' when failed */
+  virtual unsigned termwidth() const;
+
 private:
   bool infoWarningFilter(Verbosity verbosity, Type mask);
   void displayProgress(const std::string & s, int percent);
   void displayTick(const std::string & s);
-  /* Return current terminal width
-   * or return 10000 when failed */
-  unsigned int termwidth() const;
 
   bool _use_colors;
   bool _isatty;

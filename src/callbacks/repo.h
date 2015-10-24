@@ -11,10 +11,10 @@
 #include <sstream>
 #include <boost/format.hpp>
 
-#include "zypp/base/Logger.h"
-#include "zypp/ZYppCallbacks.h"
-#include "zypp/Pathname.h"
-#include "zypp/Url.h"
+#include <zypp/base/Logger.h>
+#include <zypp/ZYppCallbacks.h>
+#include <zypp/Pathname.h>
+#include <zypp/Url.h>
 
 #include "Zypper.h"
 #include "utils/prompt.h"
@@ -138,6 +138,28 @@ struct DownloadResolvableReportReceiver : public zypp::callback::ReceiveReport<z
   }
   */
 
+  void fillsRhs( TermLine & outstr_r, Zypper & zypper_r, zypp::Package::constPtr pkg_r )
+  {
+    outstr_r.rhs << " (" << ++zypper_r.runtimeData().commit_pkg_current
+		 << "/" << zypper_r.runtimeData().commit_pkgs_total << ")";
+    if ( pkg_r )
+    {
+      outstr_r.rhs << ", " << pkg_r->downloadSize().asString( 5 ) << " "
+		   // TranslatorExplanation %s is package size like "5.6 M"
+		   << boost::format(_("(%s unpacked)")) % pkg_r->installSize().asString( 5 );
+    }
+  }
+
+  virtual void infoInCache( Resolvable::constPtr res_r, const Pathname & localfile_r )
+  {
+    Zypper & zypper = *Zypper::instance();
+
+    TermLine outstr( TermLine::SF_SPLIT | TermLine::SF_EXPAND );
+    outstr.lhs << boost::format(_("In cache %1%")) % localfile_r.basename();
+    fillsRhs( outstr, zypper, zypp::asKind<zypp::Package>(res_r) );
+    zypper.out().infoLine( outstr );
+  }
+
   /** this is interesting because we have full resolvable data at hand here
    * The media backend has only the file URI
    * \todo combine this and the media data progress callbacks in a reasonable manner
@@ -148,30 +170,18 @@ struct DownloadResolvableReportReceiver : public zypp::callback::ReceiveReport<z
     _url = url;
     Zypper & zypper = *Zypper::instance();
 
-    std::ostringstream s;
-    s << boost::format(_("Retrieving %s %s-%s.%s"))
+    TermLine outstr( TermLine::SF_SPLIT | TermLine::SF_EXPAND );
+    outstr.lhs << boost::format(_("Retrieving %s %s-%s.%s"))
         % kind_to_string_localized(_resolvable_ptr->kind(), 1)
         % _resolvable_ptr->name()
         % _resolvable_ptr->edition() % _resolvable_ptr->arch();
-
-    s << " (" << ++zypper.runtimeData().commit_pkg_current
-      << "/" << zypper.runtimeData().commit_pkgs_total << ")";
+    fillsRhs( outstr, zypper, zypp::asKind<zypp::Package>(resolvable_ptr) );
 
     // temporary fix for bnc #545295
-    if (zypper.runtimeData().commit_pkg_current ==
-        zypper.runtimeData().commit_pkgs_total)
+    if ( zypper.runtimeData().commit_pkg_current == zypper.runtimeData().commit_pkgs_total )
       zypper.runtimeData().commit_pkg_current = 0;
 
-// grr, bad class??
-//    zypp::ResObject::constPtr ro =
-//      dynamic_pointer_cast<const zypp::ResObject::constPtr> (resolvable_ptr);
-    zypp::Package::constPtr ro = zypp::asKind<zypp::Package> (resolvable_ptr);
-    if (ro) {
-      s << ", " << ro->downloadSize () << " "
-          // TranslatorExplanation %s is package size like "5.6 M"
-          << boost::format(_("(%s unpacked)")) % ro->installSize();
-    }
-    zypper.out().info(s.str());
+    zypper.out().infoLine( outstr );
     zypper.runtimeData().action_rpm_download = true;
   }
 
@@ -179,7 +189,7 @@ struct DownloadResolvableReportReceiver : public zypp::callback::ReceiveReport<z
   virtual bool progress(int value, zypp::Resolvable::constPtr /*resolvable_ptr*/)
   {
     // seems this is never called, the progress is reported by the media backend anyway
-    INT << "not impelmented" << std::endl;
+    // INT << "not impelmented" << std::endl;
     // TranslatorExplanation This text is a progress display label e.g. "Retrieving [42%]"
 //    display_step( "download-resolvable", ~("Retrieving") /* + resolvable_ptr->name() */, value );
     return true;

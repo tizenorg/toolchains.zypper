@@ -22,18 +22,21 @@
 #include <boost/logic/tribool.hpp>
 #include <boost/format.hpp>
 
-#include "zypp/ZYppFactory.h"
-#include "zypp/zypp_detail/ZYppReadOnlyHack.h"
+#include <zypp/ZYppFactory.h>
+#include <zypp/zypp_detail/ZYppReadOnlyHack.h>
 
-#include "zypp/base/Logger.h"
-#include "zypp/base/Algorithm.h"
-#include "zypp/base/UserRequestException.h"
+#include <zypp/base/LogTools.h>
+#include <zypp/base/Algorithm.h>
+#include <zypp/base/UserRequestException.h>
+#include <zypp/base/DtorReset.h>
 
-#include "zypp/sat/SolvAttr.h"
-#include "zypp/PoolQuery.h"
-#include "zypp/Locks.h"
+#include <zypp/sat/SolvAttr.h>
+#include <zypp/AutoDispose.h>
+#include <zypp/PoolQuery.h>
+#include <zypp/Locks.h>
+#include <zypp/Edition.h>
 
-#include "zypp/target/rpm/RpmHeader.h" // for install <.rpmURI>
+#include <zypp/target/rpm/RpmHeader.h> // for install <.rpmURI>
 
 #include "main.h"
 #include "Zypper.h"
@@ -53,13 +56,14 @@
 #include "locks.h"
 #include "search.h"
 #include "info.h"
+#include "download.h"
+#include "source-download.h"
 
 #include "output/OutNormal.h"
 #include "output/OutXML.h"
 
-using namespace std;
+using boost::format;
 using namespace zypp;
-using namespace boost;
 
 ZYpp::Ptr God = NULL;
 parsed_opts copts; // command options
@@ -156,18 +160,19 @@ void print_main_help(Zypper & zypper)
     "\t--version, -V\t\tOutput the version number.\n"
     "\t--promptids\t\tOutput a list of zypper's user prompts.\n"
     "\t--config, -c <file>\tUse specified config file instead of the default.\n"
+    "\t--userdata <string>\tUser defined transaction id used in history and plugins.\n"
     "\t--quiet, -q\t\tSuppress normal output, print only error\n"
     "\t\t\t\tmessages.\n"
     "\t--verbose, -v\t\tIncrease verbosity.\n"
     "\t--no-abbrev, -A\t\tDo not abbreviate text in tables.\n"
     "\t--table-style, -s\tTable style (integer).\n"
-    "\t--rug-compatible, -r\tTurn on rug compatibility.\n"
     "\t--non-interactive, -n\tDo not ask anything, use default answers\n"
     "\t\t\t\tautomatically.\n"
     "\t--non-interactive-include-reboot-patches\n"
     "\t\t\t\tDo not treat patches as interactive, which have\n"
     "\t\t\t\tthe rebootSuggested-flag set.\n"
     "\t--xmlout, -x\t\tSwitch to XML output.\n"
+    "\t--ignore-unknown, -i\tIgnore unknown packages.\n"
   );
 
   static string repo_manager_options = _(
@@ -182,8 +187,10 @@ void print_main_help(Zypper & zypper)
   static string help_global_repo_options = _("     Repository Options:\n"
     "\t--no-gpg-checks\t\tIgnore GPG check failures and continue.\n"
     "\t--gpg-auto-import-keys\tAutomatically trust and import new repository\n"
-      "\t\t\t\tsigning keys.\n"
+    "\t\t\t\tsigning keys.\n"
     "\t--plus-repo, -p <URI>\tUse an additional repository.\n"
+    "\t--plus-content <tag>\tAdditionally use disabled repositories providing a specific keyword.\n"
+    "\t\t\t\tTry '--plus-content debug' to enable repos indicating to provide debug packages.\n"
     "\t--disable-repositories\tDo not read meta-data from repositories.\n"
     "\t--no-refresh\t\tDo not refresh the repositories.\n"
     "\t--no-cd\t\t\tIgnore CD/DVD repositories.\n"
@@ -267,6 +274,9 @@ void print_main_help(Zypper & zypper)
     "\ttargetos, tos\t\tPrint the target operating system ID string.\n"
     "\tlicenses\t\tPrint report about licenses and EULAs of\n"
     "\t\t\t\tinstalled packages.\n"
+    "\tdownload\t\tDownload rpms specified on the commandline to a local directory.\n"
+    "\tsource-download\t\tDownload source rpms for all installed packages\n"
+    "\t\t\t\tto a local directory.\n"
   );
 
   static string help_usage = _(
@@ -309,6 +319,42 @@ void print_command_help_hint(Zypper & zypper)
       % (zypper.runningShell() ? "help <command>" : "zypper help <command>")));
 }
 
+/// \todo use it in all commands!
+int Zypper::defaultLoadSystem( LoadSystemFlags flags_r )
+{
+  DBG << "FLAGS:" << flags_r << endl;
+  if ( ! flags_r.testFlag( NO_POOL ) )
+  {
+    init_target( *this );
+    if ( exitCode() != ZYPPER_EXIT_OK )
+      return exitCode();
+
+    if ( ! flags_r.testFlag( NO_REPOS ) )
+    {
+      init_repos(*this);
+      if ( exitCode() != ZYPPER_EXIT_OK )
+	return exitCode();
+    }
+
+    DtorReset _tmp( _gopts.disable_system_resolvables );
+    if ( flags_r.testFlag( NO_TARGET ) )
+    {
+      _gopts.disable_system_resolvables = true;
+    }
+    load_resolvables( *this );
+    if ( exitCode() != ZYPPER_EXIT_OK )
+      return exitCode();
+
+    if ( ! ( flags_r && NO_POOL ) )
+    {
+      // have REPOS and TARGET
+      // compute status of PPP
+      resolve(*this);
+    }
+  }
+  return exitCode();
+}
+
 /*
  * parses global options, returns the command
  *
@@ -333,7 +379,7 @@ void Zypper::processGlobalOptions()
     {"terse",                      no_argument,       0, 't'},
     {"no-abbrev",                  no_argument,       0, 'A'},
     {"table-style",                required_argument, 0, 's'},
-    {"rug-compatible",             no_argument,       0, 'r'},
+    {"rug-compatible",             no_argument,       0, 'r'},	/* DEPRECATED and UNSUPPORTED SINCE SLE12 */
     {"non-interactive",            no_argument,       0, 'n'},
     {"non-interactive-include-reboot-patches", no_argument, 0, '0'},
     {"no-gpg-checks",              no_argument,       0,  0 },
@@ -349,12 +395,15 @@ void Zypper::processGlobalOptions()
     {"disable-system-resolvables", no_argument,       0,  0 },
     // REPO OPTIONS
     {"plus-repo",                  required_argument, 0, 'p'},
+    {"plus-content",               required_argument, 0,  0 },
     {"disable-repositories",       no_argument,       0,  0 },
     {"no-refresh",                 no_argument,       0,  0 },
     {"no-cd",                      no_argument,       0,  0 },
     {"no-remote",                  no_argument,       0,  0 },
     {"xmlout",                     no_argument,       0, 'x'},
     {"config",                     required_argument, 0, 'c'},
+    {"userdata",                   required_argument, 0,  0 },
+    {"ignore-unknown",             no_argument,       0, 'i'},
     {0, 0, 0, 0}
   };
 
@@ -450,13 +499,30 @@ void Zypper::processGlobalOptions()
 
   // ======== other global options ========
 
+  if ( (it = gopts.find( "userdata" )) != gopts.end() )
+  {
+    if ( ! ZConfig::instance().setUserData( it->second.front() ) )
+    {
+      out().error(_("User data string must not contain nonprintable or newline characters!"));
+      setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
+      ZYPP_THROW(ExitRequestException("userdata"));
+    }
+  }
+
+  ///////////////////////////////////////////////////////////////////
+  // Rug compatibility is dropped since SLE12.
+  // Rug options are removed from documantation(commit#53ffd419) but
+  // will stay active in code for a while.
   string rug_test(_argv[0]);
-  if (gopts.count("rug-compatible") || rug_test.rfind("rug") == rug_test.size()-3 )
+  if (gopts.count("rug-compatible") || Pathname::basename(_argv[0]) == "rug" )
   {
     _gopts.is_rug_compatible = true;
-    out().info("Switching to rug-compatible mode.", Out::DEBUG);
-    DBG << "Switching to rug-compatible mode." << endl;
+    INT << "Switching to (no longer supported) rug-compatible mode." << endl;
+    out().error("************************************************************************");
+    out().error("** Rug-compatible mode is deprecated and will vanish in a future version. [-r,--rug-compatible]");
+    out().error("************************************************************************");
   }
+  ///////////////////////////////////////////////////////////////////
 
   // Help is parsed by setting the help flag for a command, which may be empty
   // $0 -h,--help
@@ -510,6 +576,19 @@ void Zypper::processGlobalOptions()
     _gopts.rm_options = RepoManagerOptions(_gopts.root_dir);
   }
 
+  // on the fly check the baseproduct symlink
+  {
+    PathInfo pi( _gopts.root_dir + "/etc/products.d/baseproduct" );
+    if ( ! pi.isFile() && PathInfo( _gopts.root_dir + "/etc/products.d" ).isDir() )
+    {
+      ERR << "baseproduct symlink is dangling or missing: " << pi << endl;
+      out().warning(_(
+	"The /etc/products.d/baseproduct symlink is dangling or missing!\n"
+	"The link must point to your core products .prod file in /etc/products.d.\n"
+      ));
+    }
+  }
+
   if ((it = gopts.find("reposd-dir")) != gopts.end()) {
     _gopts.rm_options.knownReposPath = it->second.front();
   }
@@ -517,25 +596,21 @@ void Zypper::processGlobalOptions()
   // cache dirs
 
   if ((it = gopts.find("cache-dir")) != gopts.end())
-    _gopts.rm_options.repoCachePath = it->second.front();
+  {
+    _gopts.rm_options.repoCachePath		= it->second.front();
+    _gopts.rm_options.repoRawCachePath		= _gopts.rm_options.repoCachePath / "raw";
+    _gopts.rm_options.repoSolvCachePath		= _gopts.rm_options.repoCachePath / "solv";
+    _gopts.rm_options.repoPackagesCachePath	= _gopts.rm_options.repoCachePath / "packages";
+  }
 
   if ((it = gopts.find("raw-cache-dir")) != gopts.end())
     _gopts.rm_options.repoRawCachePath = it->second.front();
-  else
-    _gopts.rm_options.repoRawCachePath =
-      _gopts.rm_options.repoCachePath / "raw";
 
   if ((it = gopts.find("solv-cache-dir")) != gopts.end())
     _gopts.rm_options.repoSolvCachePath = it->second.front();
-  else
-    _gopts.rm_options.repoSolvCachePath =
-      _gopts.rm_options.repoCachePath / "solv";
 
   if ((it = gopts.find("pkg-cache-dir")) != gopts.end())
     _gopts.rm_options.repoPackagesCachePath = it->second.front();
-  else
-    _gopts.rm_options.repoPackagesCachePath =
-      _gopts.rm_options.repoCachePath / "packages";
 
   DBG << "repos.d dir = " << _gopts.rm_options.knownReposPath << endl;
   DBG << "cache dir = " << _gopts.rm_options.repoCachePath << endl;
@@ -588,7 +663,7 @@ void Zypper::processGlobalOptions()
   if ((it = gopts.find("opt")) != gopts.end()) {
     cout << "Opt arg: ";
     std::copy (it->second.begin(), it->second.end(),
-               ostream_iterator<string> (cout, ", "));
+               std::ostream_iterator<string> (cout, ", "));
     cout << endl;
   }
 
@@ -682,7 +757,7 @@ void Zypper::processGlobalOptions()
     }
   }
 
-  // additional repositories
+  // additional repositories by URL
   if (gopts.count("plus-repo"))
   {
     switch (command().toEnum())
@@ -732,6 +807,37 @@ void Zypper::processGlobalOptions()
     }
   }
 
+  // additional repositories by content (keywords)
+  if ( gopts.count("plus-content") )
+  {
+    switch ( command().toEnum())
+    {
+    case ZypperCommand::ADD_REPO_e:
+    case ZypperCommand::REMOVE_REPO_e:
+    case ZypperCommand::MODIFY_REPO_e:
+    case ZypperCommand::RENAME_REPO_e:
+    //case ZypperCommand::REFRESH_e:
+    case ZypperCommand::CLEAN_e:
+    case ZypperCommand::REMOVE_LOCK_e:
+    case ZypperCommand::LIST_LOCKS_e:
+    {
+      out().warning(boost::str(format(
+        // TranslatorExplanation The %s is "--option-name"
+        _("The %s option has no effect here, ignoring."))
+        % "--plus-content"));
+      break;
+    }
+    default:
+    {
+      const std::list<std::string> & content( gopts["plus-content"] );
+      _rdata.additional_content_repos.insert( content.begin(), content.end() );
+    }
+    }
+  }
+
+  if (gopts.count("ignore-unknown"))
+    _gopts.ignore_unknown = true;
+
   MIL << "DONE" << endl;
 }
 
@@ -741,6 +847,15 @@ void Zypper::commandShell()
   MIL << "Entering the shell" << endl;
 
   setRunningShell(true);
+
+  if ( _gopts.changedRoot && _gopts.root_dir != "/" )
+  {
+    // bnc#575096: Quick fix
+    ::setenv( "ZYPP_LOCKFILE_ROOT", _gopts.root_dir.c_str(), 0 );
+  }
+
+  God = zypp::getZYpp();
+  init_target( *this );
 
   string histfile;
   try {
@@ -779,6 +894,8 @@ void Zypper::commandShell()
 
     try
     {
+      MIL << "Reloading..." << endl;
+      God->target()->reload();   // reload system in case rpm database has changed
       setCommand(ZypperCommand(command_str));
       if (command() == ZypperCommand::SHELL_QUIT)
         break;
@@ -857,6 +974,19 @@ void Zypper::safeDoCommand()
     processCommandOptions();
     if (command() == ZypperCommand::NONE || exitCode())
       return;
+
+    // "what-provides" is obsolete, functionality is provided by "search"
+    if (command() == ZypperCommand::WHAT_PROVIDES_e)
+    {
+      out().info( boost::str(format(_("Command '%s' is replaced by '%s'."))
+                             % "what-provides" % "search --provides --match-exact"));
+      out().info( boost::str(format(_("See '%s' for all available options.")) % "help search"));
+      setCommand(ZypperCommand::SEARCH_e);
+      _copts["provides"].push_back("");
+      _copts["match-exact"].push_back("");
+      ::copts = _copts;
+    }
+
     doCommand();
   }
   catch (const AbortRequestException & ex)
@@ -873,13 +1003,13 @@ void Zypper::safeDoCommand()
   catch (const Exception & ex)
   {
     ZYPP_CAUGHT(ex);
-
-    Out::Verbosity tmp = out().verbosity();
-    out().setVerbosity(Out::DEBUG);
-    out().error(ex, _("Unexpected exception."));
-    out().setVerbosity(tmp);
-
+    {
+      SCOPED_VERBOSITY( out(), Out::DEBUG );
+      out().error(ex, _("Unexpected exception."));
+    }
     report_a_bug(out());
+    if ( ! exitCode() )
+      setExitCode( ZYPPER_EXIT_ERR_BUG );
   }
 }
 
@@ -949,6 +1079,8 @@ void Zypper::processCommandOptions()
       // the default (ignored)
       {"name",                      no_argument,       0, 'n'},
       {"force",                     no_argument,       0, 'f'},
+      {"oldpackage",                no_argument,       0,  0 },
+      {"replacefiles",              no_argument,       0,  0 },
       {"capability",                no_argument,       0, 'C'},
       // rug compatibility, we have global --non-interactive
       {"no-confirm",                no_argument,       0, 'y'},
@@ -963,6 +1095,7 @@ void Zypper::processCommandOptions()
       {"dry-run",                   no_argument,       0, 'N'},
       {"no-recommends",             no_argument,       0,  0 },
       {"recommends",                no_argument,       0,  0 },
+      {"details",		    no_argument,       0,  0 },
       {"download",                  required_argument, 0,  0 },
       // aliases for --download
       // in --download-only, -d must be kept for backward and rug compatibility
@@ -993,8 +1126,14 @@ void Zypper::processCommandOptions()
       "                            Default: %s.\n"
       "-n, --name                  Select packages by plain name, not by capability.\n"
       "-C, --capability            Select packages by capability.\n"
-      "-f, --force                 Reinstall the package if the exact version is\n"
-      "                            available in repositories.\n"
+      "-f, --force                 Install even if the item is already installed (reinstall),\n"
+      "                            downgraded or changes vendor or architecture.\n"
+      "    --oldpackage            Allow to replace a newer item with an older one.\n"
+      "                            Handy if you are doing a rollback. Unlike --force\n"
+      "                            it will not enforce a reinstall.\n"
+      "    --replacefiles          Install the packages even if they replace files from other,\n"
+      "                            already installed, packages. Default is to treat file conflicts\n"
+      "                            as an error. --download-as-needed disables the fileconflict check.\n"
       "-l, --auto-agree-with-licenses\n"
       "                            Automatically say 'yes' to third party license\n"
       "                            confirmation prompt.\n"
@@ -1008,6 +1147,7 @@ void Zypper::processCommandOptions()
       "    --force-resolution      Force the solver to find a solution (even\n"
       "                            an aggressive one).\n"
       "-D, --dry-run               Test the installation, do not actually install.\n"
+      "    --details               Show the detailed installation summary.\n"
       "    --download              Set the download-install mode. Available modes:\n"
       "                            %s\n"
       "-d, --download-only         Only download the packages, do not install.\n"
@@ -1035,6 +1175,7 @@ void Zypper::processCommandOptions()
       {"clean-deps", no_argument,       0, 'u'},
       {"no-clean-deps", no_argument,    0, 'U'},
       {"dry-run",    no_argument,       0, 'D'},
+      {"details",		    no_argument,       0,  0 },
       // rug uses -N shorthand
       {"dry-run",    no_argument,       0, 'N'},
       {"help",       no_argument,       0, 'h'},
@@ -1064,6 +1205,7 @@ void Zypper::processCommandOptions()
       "-u, --clean-deps            Automatically remove unneeded dependencies.\n"
       "-U, --no-clean-deps         No automatic removal of unneeded dependencies.\n"
       "-D, --dry-run               Test the removal, do not actually remove.\n"
+      "    --details               Show the detailed installation summary.\n"
     ), "package, patch, pattern, product", "package");
     break;
   }
@@ -1073,6 +1215,7 @@ void Zypper::processCommandOptions()
     static struct option src_install_options[] = {
       {"build-deps-only", no_argument, 0, 'd'},
       {"no-build-deps", no_argument, 0, 'D'},
+      {"download-only", no_argument, 0, 0},
       {"repo", required_argument, 0, 'r'},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}
@@ -1087,6 +1230,7 @@ void Zypper::processCommandOptions()
       "-d, --build-deps-only    Install only build dependencies of specified packages.\n"
       "-D, --no-build-deps      Don't install build dependencies.\n"
       "-r, --repo <alias|#|URI> Install packages only from specified repositories.\n"
+      "    --download-only      Only download the packages, do not install.\n"
     );
     break;
   }
@@ -1099,6 +1243,7 @@ void Zypper::processCommandOptions()
       {"dry-run", no_argument, 0, 'D'},
       // rug uses -N shorthand
       {"dry-run", no_argument, 0, 'N'},
+      {"details",		    no_argument,       0,  0 },
       {"download",                  required_argument, 0,  0 },
       // aliases for --download
       // in --download-only, -d must be kept for backward and rug compatibility
@@ -1106,8 +1251,9 @@ void Zypper::processCommandOptions()
       {"download-in-advance",       no_argument,       0,  0 },
       {"download-in-heaps",         no_argument,       0,  0 },
       {"download-as-needed",        no_argument,       0,  0 },
-      {"repo", required_argument, 0, 'r'},
-      {"no-recommends", no_argument, 0, 0},
+      {"repo",                      required_argument, 0, 'r'},
+      {"no-recommends",             no_argument,       0,  0 },
+      {"recommends",                no_argument,       0,  0 },
       {"help", no_argument, 0, 'h'},
       {"debug-solver", no_argument, 0, 0},
       {0, 0, 0, 0}
@@ -1117,15 +1263,17 @@ void Zypper::processCommandOptions()
       "verify (ve) [options]\n"
       "\n"
       "Check whether dependencies of installed packages are satisfied"
-      " and repair eventual dependency problems.\n"
+      " and suggest to install or remove packages in order to repair the"
+      " dependency problems.\n"
       "\n"
       "  Command options:\n"
       "-r, --repo <alias|#|URI>    Load only the specified repository.\n"
       "    --no-recommends         Do not install recommended packages, only required.\n"
-      "    --recommends            Install also recommended packages in addition\n"
-      "                            to the required.\n"
+      "    --recommends            Install also packages recommended by newly installed\n"
+      "                            ones.\n"
       "-D, --dry-run               Test the repair, do not actually do anything to\n"
       "                            the system.\n"
+      "    --details               Show the detailed installation summary.\n"
       "    --download              Set the download-install mode. Available modes:\n"
       "                            %s\n"
       "-d, --download-only         Only download the packages, do not install.\n"
@@ -1137,6 +1285,7 @@ void Zypper::processCommandOptions()
   {
     static struct option options[] = {
       {"dry-run", no_argument, 0, 'D'},
+      {"details",		    no_argument,       0,  0 },
       {"download",                  required_argument, 0,  0 },
       // aliases for --download
       // in --download-only, -d must be kept for backward and rug compatibility
@@ -1160,6 +1309,7 @@ void Zypper::processCommandOptions()
       "  Command options:\n"
       "-r, --repo <alias|#|URI>    Load only the specified repositories.\n"
       "-D, --dry-run               Test the installation, do not actually install.\n"
+      "    --details               Show the detailed installation summary.\n"
       "    --download              Set the download-install mode. Available modes:\n"
       "                            %s\n"
       "-d, --download-only         Only download the packages, do not install.\n"
@@ -1205,7 +1355,7 @@ void Zypper::processCommandOptions()
       // TranslatorExplanation the %s = "yast2, rpm-md, plaindir"
       "removeservice (rs) [options] <alias|#|URI>\n"
       "\n"
-      "Remove specified repository index service from the sytem..\n"
+      "Remove specified repository index service from the system..\n"
       "\n"
       "  Command options:\n"
       "    --loose-auth   Ignore user authentication data in the URI.\n"
@@ -1273,16 +1423,16 @@ void Zypper::processCommandOptions()
   {
     static struct option options[] =
     {
-      {"help", no_argument, 0, 'h'},
-      {"uri", no_argument, 0, 'u'},
-      {"url", no_argument, 0, 'u'},
-      {"priority", no_argument, 0, 'p'},
-      {"details", no_argument, 0, 'd'},
-//      {"type", required_argument, 0, 't'},
-      {"with-repos", no_argument, 0, 'r'},
-      {"sort-by-uri", no_argument, 0, 'U'},
-      {"sort-by-name", no_argument, 0, 'N'},
-      {"sort-by-priority", no_argument, 0, 'P'},
+      {"help",			no_argument,	0, 'h'},
+      {"uri",			no_argument,	0, 'u'},
+      {"url",			no_argument,	0,  0 },
+      {"priority",		no_argument,	0, 'p'},
+      {"details",		no_argument,	0, 'd'},
+      {"with-repos",		no_argument,	0, 'r'},
+      {"show-enabled-only",	no_argument,	0, 'E'},
+      {"sort-by-uri",		no_argument,	0, 'U'},
+      {"sort-by-name",		no_argument,	0, 'N'},
+      {"sort-by-priority",	no_argument,	0, 'P'},
       {0, 0, 0, 0}
     };
     specific_options = options;
@@ -1295,8 +1445,8 @@ void Zypper::processCommandOptions()
       "-u, --uri                 Show also base URI of repositories.\n"
       "-p, --priority            Show also repository priority.\n"
       "-d, --details             Show more information like URI, priority, type.\n"
-//      "-t, --type                List only services of specified type.\n"
       "-r, --with-repos          Show also repositories belonging to the services.\n"
+      "-E, --show-enabled-only   Show enabled repos only.\n"
       "-P, --sort-by-priority    Sort the list by repository priority.\n"
       "-U, --sort-by-uri         Sort the list by URI.\n"
       "-N, --sort-by-name        Sort the list by name.\n"
@@ -1307,8 +1457,9 @@ void Zypper::processCommandOptions()
   case ZypperCommand::REFRESH_SERVICES_e:
   {
     static struct option options[] = {
-      {"help", no_argument, 0, 'h'},
-      {"with-repos", no_argument, 0, 'r'},
+      {"help",			no_argument,	0, 'h'},
+      {"with-repos",		no_argument,	0, 'r'},
+      {"restore-status",	no_argument,	0, 'R'},
       {0, 0, 0, 0}
     };
     specific_options = options;
@@ -1318,7 +1469,8 @@ void Zypper::processCommandOptions()
       "Refresh defined repository index services.\n"
       "\n"
       "  Command options:\n"
-      "-r, --with-repos      Refresh also repositories.\n"
+      "-r, --with-repos      Refresh also the service repositories.\n"
+      "-R, --restore-status  Also restore service repositories enabled/disabled state.\n"
     );
     break;
   }
@@ -1346,7 +1498,7 @@ void Zypper::processCommandOptions()
       "addrepo (ar) [options] <URI> <alias>\n"
       "addrepo (ar) [options] <file.repo>\n"
       "\n"
-      "Add a repository to the sytem. The repository can be specified by its URI"
+      "Add a repository to the system. The repository can be specified by its URI"
       " or can be read from specified .repo file (even remote).\n"
       "\n"
       "  Command options:\n"
@@ -1368,20 +1520,21 @@ void Zypper::processCommandOptions()
   case ZypperCommand::LIST_REPOS_e:
   {
     static struct option service_list_options[] = {
-      {"export", required_argument, 0, 'e'},
-      {"alias", no_argument, 0, 'a'},
-      {"name", no_argument, 0, 'n'},
-      {"refresh", no_argument, 0, 'r'},
-      {"uri", no_argument, 0, 'u'},
-      {"url", no_argument, 0, 'u'},
-      {"priority", no_argument, 0, 'p'},
-      {"details", no_argument, 0, 'd'},
-      {"sort-by-priority", no_argument, 0, 'P'},
-      {"sort-by-uri", no_argument, 0, 'U'},
-      {"sort-by-alias", no_argument, 0, 'A'},
-      {"sort-by-name", no_argument, 0, 'N'},
-      {"service", no_argument, 0, 's'},
-      {"help", no_argument, 0, 'h'},
+      {"export",		required_argument,	0, 'e'},
+      {"alias",			no_argument,		0, 'a'},
+      {"name",			no_argument,		0, 'n'},
+      {"refresh",		no_argument,		0, 'r'},
+      {"uri",			no_argument,		0, 'u'},
+      {"url",			no_argument,		0,  0 },
+      {"priority",		no_argument,		0, 'p'},
+      {"details",		no_argument,		0, 'd'},
+      {"show-enabled-only",	no_argument,		0, 'E'},
+      {"sort-by-priority",	no_argument,		0, 'P'},
+      {"sort-by-uri",		no_argument,		0, 'U'},
+      {"sort-by-alias",		no_argument,		0, 'A'},
+      {"sort-by-name",		no_argument,		0, 'N'},
+      {"service",		no_argument,		0, 's'},
+      {"help",			no_argument,		0, 'h'},
       {0, 0, 0, 0}
     };
     specific_options = service_list_options;
@@ -1396,7 +1549,7 @@ void Zypper::processCommandOptions()
       specific_options = options;
 
       _command_help = _(
-        // translators: this is just a rug compatiblity command
+        // translators: this is just a legacy command
         "list-resolvables (lr)\n"
         "\n"
         "List available resolvable types.\n"
@@ -1418,6 +1571,7 @@ void Zypper::processCommandOptions()
       "-r, --refresh             Show also the autorefresh flag.\n"
       "-d, --details             Show more information like URI, priority, type.\n"
       "-s, --service             Show also alias of parent service.\n"
+      "-E, --show-enabled-only   Show enabled repos only.\n"
       "-U, --sort-by-uri         Sort the list by URI.\n"
       "-P, --sort-by-priority    Sort the list by repository priority.\n"
       "-A, --sort-by-alias       Sort the list by alias.\n"
@@ -1616,7 +1770,8 @@ void Zypper::processCommandOptions()
       // rug compatibility option, we have global --non-interactive
       // note: rug used this uption only to auto-answer the 'continue with install?' prompt.
       {"no-confirm",                no_argument,       0, 'y'},
-      {"skip-interactive",          no_argument,       0, 0},
+      {"skip-interactive",          no_argument,       0,  0 },
+      {"with-interactive",          no_argument,       0,  0 },
       {"auto-agree-with-licenses",  no_argument,       0, 'l'},
       // rug compatibility, we have --auto-agree-with-licenses
       {"agree-to-third-party-licenses",  no_argument,  0, 0},
@@ -1626,9 +1781,11 @@ void Zypper::processCommandOptions()
       {"force-resolution",          no_argument,       0,  0 },
       {"no-recommends",             no_argument,       0,  0 },
       {"recommends",                no_argument,       0,  0 },
+      {"replacefiles",              no_argument,       0,  0 },
       {"dry-run",                   no_argument,       0, 'D'},
       // rug uses -N shorthand
       {"dry-run",                   no_argument,       0, 'N'},
+      {"details",		    no_argument,       0,  0 },
       {"download",                  required_argument, 0,  0 },
       // aliases for --download
       // in --download-only, -d must be kept for backward and rug compatibility
@@ -1657,6 +1814,7 @@ void Zypper::processCommandOptions()
       "                            Default: %s.\n"
       "-r, --repo <alias|#|URI>    Load only the specified repository.\n"
       "    --skip-interactive      Skip interactive updates.\n"
+      "    --with-interactive      Do not skip interactive updates.\n"
       "-l, --auto-agree-with-licenses\n"
       "                            Automatically say 'yes' to third party license\n"
       "                            confirmation prompt.\n"
@@ -1668,11 +1826,15 @@ void Zypper::processCommandOptions()
       "    --no-recommends         Do not install recommended packages, only required.\n"
       "    --recommends            Install also recommended packages in addition\n"
       "                            to the required.\n"
+      "    --replacefiles          Install the packages even if they replace files from other,\n"
+      "                            already installed, packages. Default is to treat file conflicts\n"
+      "                            as an error. --download-as-needed disables the fileconflict check.\n"
       "-R, --no-force-resolution   Do not force the solver to find solution,\n"
       "                            let it ask.\n"
       "    --force-resolution      Force the solver to find a solution (even\n"
       "                            an aggressive one).\n"
       "-D, --dry-run               Test the update, do not actually update.\n"
+      "    --details               Show the detailed installation summary.\n"
       "    --download              Set the download-install mode. Available modes:\n"
       "                            %s\n"
       "-d, --download-only         Only download the packages, do not install.\n"
@@ -1692,7 +1854,9 @@ void Zypper::processCommandOptions()
       {"debug-solver",              no_argument,       0,  0 },
       {"no-recommends",             no_argument,       0,  0 },
       {"recommends",                no_argument,       0,  0 },
+      {"replacefiles",              no_argument,       0,  0 },
       {"dry-run",                   no_argument,       0, 'D'},
+      {"details",		    no_argument,       0,  0 },
       {"download",                  required_argument, 0,  0 },
       // aliases for --download
       // in --download-only, -d must be kept for backward and rug compatibility
@@ -1700,8 +1864,8 @@ void Zypper::processCommandOptions()
       {"download-in-advance",       no_argument,       0,  0 },
       {"download-in-heaps",         no_argument,       0,  0 },
       {"download-as-needed",        no_argument,       0,  0 },
-      {"bz",                        required_argument, 0, 'b'},
       {"bugzilla",                  required_argument, 0, 'b'},
+      {"bz",                        required_argument, 0,  0 },
       {"cve",                       required_argument, 0,  0 },
       {"category",                  required_argument, 0, 'g'},
       {"date",                      required_argument, 0,  0 },
@@ -1730,8 +1894,12 @@ void Zypper::processCommandOptions()
       "    --no-recommends         Do not install recommended packages, only required.\n"
       "    --recommends            Install also recommended packages in addition\n"
       "                            to the required.\n"
+      "    --replacefiles          Install the packages even if they replace files from other,\n"
+      "                            already installed, packages. Default is to treat file conflicts\n"
+      "                            as an error. --download-as-needed disables the fileconflict check.\n"
       "-r, --repo <alias|#|URI>    Load only the specified repository.\n"
       "-D, --dry-run               Test the update, do not actually update.\n"
+      "    --details               Show the detailed installation summary.\n"
       "    --download              Set the download-install mode. Available modes:\n"
       "                            %s\n"
       "-d, --download-only         Only download the packages, do not install.\n"
@@ -1743,8 +1911,8 @@ void Zypper::processCommandOptions()
   {
     static struct option list_updates_options[] = {
       {"repo",        required_argument, 0, 'r'},
-      {"bz",          optional_argument, 0, 'b'},
       {"bugzilla",    optional_argument, 0, 'b'},
+      {"bz",          optional_argument, 0,  0 },
       {"cve",         optional_argument, 0,  0 },
       {"category",    required_argument, 0, 'g'},
       {"date",        required_argument, 0,  0 },
@@ -1778,11 +1946,13 @@ void Zypper::processCommandOptions()
       {"from",                      required_argument, 0,  0 },
       {"no-recommends",             no_argument,       0,  0 },
       {"recommends",                no_argument,       0,  0 },
+      {"replacefiles",              no_argument,       0,  0 },
       {"auto-agree-with-licenses",  no_argument,       0, 'l'},
       {"debug-solver",              no_argument,       0,  0 },
       {"dry-run",                   no_argument,       0, 'D'},
       // rug uses -N shorthand
       {"dry-run",                   no_argument,       0, 'N'},
+      {"details",		    no_argument,       0,  0 },
       {"download",                  required_argument, 0,  0 },
       // aliases for --download
       // in --download-only, -d must be kept for backward and rug compatibility
@@ -1811,7 +1981,11 @@ void Zypper::processCommandOptions()
       "    --no-recommends         Do not install recommended packages, only required.\n"
       "    --recommends            Install also recommended packages in addition\n"
       "                            to the required.\n"
+      "    --replacefiles          Install the packages even if they replace files from other,\n"
+      "                            already installed, packages. Default is to treat file conflicts\n"
+      "                            as an error. --download-as-needed disables the fileconflict check.\n"
       "-D, --dry-run               Test the upgrade, do not actually upgrade\n"
+      "    --details               Show the detailed installation summary.\n"
       "    --download              Set the download-install mode. Available modes:\n"
       "                            %s\n"
       "-d, --download-only         Only download the packages, do not install.\n"
@@ -1824,11 +1998,17 @@ void Zypper::processCommandOptions()
     static struct option search_options[] = {
       {"installed-only", no_argument, 0, 'i'},
       {"uninstalled-only", no_argument, 0, 'u'},
-      {"match-all", no_argument, 0, 0},
-      {"match-any", no_argument, 0, 0},
       {"match-substrings", no_argument, 0, 0},
       {"match-words", no_argument, 0, 0},
       {"match-exact", no_argument, 0, 0},
+      {"provides", no_argument, 0, 0},
+      {"requires", no_argument, 0, 0},
+      {"recommends", no_argument, 0, 0},
+      {"conflicts", no_argument, 0, 0},
+      {"obsoletes", no_argument, 0, 0},
+      {"suggests", no_argument, 0, 0},
+      {"name", no_argument, 0, 'n'},
+      {"file-list", no_argument, 0, 'f'},
       {"search-descriptions", no_argument, 0, 'd'},
       {"case-sensitive", no_argument, 0, 'C'},
       {"type",    required_argument, 0, 't'},
@@ -1840,6 +2020,7 @@ void Zypper::processCommandOptions()
       {"catalog", required_argument, 0, 'c'},
       {"repo", required_argument, 0, 'r'},
       {"details", no_argument, 0, 's'},
+      {"verbose", no_argument, 0, 'v'},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}
     };
@@ -1847,14 +2028,21 @@ void Zypper::processCommandOptions()
     _command_help = _(
       "search (se) [options] [querystring] ...\n"
       "\n"
-      "Search for packages matching given search strings.\n"
+      "Search for packages matching any of the given search strings.\n"
       "\n"
       "  Command options:\n"
-      "    --match-all            Search for a match with all search strings (default).\n"
-      "    --match-any            Search for a match with any of the search strings.\n"
       "    --match-substrings     Search for a match to partial words (default).\n"
       "    --match-words          Search for a match to whole words only.\n"
-      "    --match-exact          Searches for an exact package name.\n"
+      "    --match-exact          Searches for an exact match of the search strings.\n"
+      "    --provides             Search for packages which provide the search strings.\n"
+      "    --recommends           Search for packages which recommend the search strings.\n"
+      "    --requires             Search for packages which require the search strings.\n"
+      "    --suggests             Search for packages which suggest the search strings.\n"
+      "    --conflicts            Search packages conflicting with search strings.\n"
+      "    --obsoletes            Search for packages which obsolete the search strings.\n"
+      "-n, --name                 Useful together with dependency options, otherwise\n"
+      "                           searching in package name is default.\n"
+      "-f, --file-list            Search for a match in the file list of packages.\n"
       "-d, --search-descriptions  Search also in package summaries and descriptions.\n"
       "-C, --case-sensitive       Perform case-sensitive search.\n"
       "-i, --installed-only       Show only packages that are already installed.\n"
@@ -1865,8 +2053,11 @@ void Zypper::processCommandOptions()
       "    --sort-by-repo         Sort packages by repository.\n"
       "-s, --details              Show each available version in each repository\n"
       "                           on a separate line.\n"
+      "-v, --verbose              Like --details, with additional information where the\n"
+      "                           search has matched (useful for search in dependencies).\n"
       "\n"
       "* and ? wildcards can also be used within search strings.\n"
+      "If a search string is enclosed in '/', it's interpreted as a regular expression.\n"
     );
     break;
   }
@@ -1918,15 +2109,19 @@ void Zypper::processCommandOptions()
   case ZypperCommand::PACKAGES_e:
   {
     static struct option options[] = {
-      {"repo", required_argument, 0, 'r'},
+      {"repo",			required_argument,	0, 'r'},
       // rug compatibility option, we have --repo
-      {"catalog", required_argument, 0, 'c'},
-      {"installed-only", no_argument, 0, 'i'},
-      {"uninstalled-only", no_argument, 0, 'u'},
-      {"sort-by-name", no_argument, 0, 'N'},
-      {"sort-by-repo", no_argument, 0, 'R'},
-      {"sort-by-catalog", no_argument, 0, 0},
-      {"help", no_argument, 0, 'h'},
+      {"catalog",		required_argument,	0, 'c'},
+      {"installed-only",	no_argument,		0, 'i'},
+      {"uninstalled-only",	no_argument,		0, 'u'},
+      {"orphaned",		no_argument,		0,  0 },
+      {"suggested",		no_argument,		0,  0 },
+      {"recommended",		no_argument,		0,  0 },
+      {"unneeded",		no_argument,		0,  0 },
+      {"sort-by-name",		no_argument,		0, 'N'},
+      {"sort-by-repo",		no_argument,		0, 'R'},
+      {"sort-by-catalog",	no_argument,		0,  0 },
+      {"help",			no_argument,		0, 'h'},
       {0, 0, 0, 0}
     };
     specific_options = options;
@@ -1940,6 +2135,10 @@ void Zypper::processCommandOptions()
       "-r, --repo <alias|#|URI>  Just another means to specify repository.\n"
       "-i, --installed-only      Show only installed packages.\n"
       "-u, --uninstalled-only    Show only packages which are not installed.\n"
+      "    --orphaned            Show packages which are orphaned (without repository).\n"
+      "    --suggested           Show packages which are suggested.\n"
+      "    --recommended         Show packages which are recommended.\n"
+      "    --unneeded            Show packages which are unneeded.\n"
       "-N, --sort-by-name        Sort the list by package name.\n"
       "-R, --sort-by-repo        Sort the list by repository.\n"
     );
@@ -2001,12 +2200,17 @@ void Zypper::processCommandOptions()
   case ZypperCommand::INFO_e:
   {
     static struct option info_options[] = {
+      {"match-substrings", no_argument, 0, 's'},
       {"type", required_argument, 0, 't'},
       {"repo", required_argument, 0, 'r'},
       // rug compatibility option, we have --repo
       {"catalog", required_argument, 0, 'c'},
+      {"provides", no_argument, 0, 0},
       {"requires", no_argument, 0, 0},
+      {"conflicts", no_argument, 0, 0},
+      {"obsoletes", no_argument, 0, 0},
       {"recommends", no_argument, 0, 0},
+      {"suggests", no_argument, 0, 0},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}
     };
@@ -2015,13 +2219,21 @@ void Zypper::processCommandOptions()
         "info (if) [options] <name> ...\n"
         "\n"
         "Show detailed information for specified packages.\n"
+        "By default the packages which match exactly the given names are shown.\n"
+        "To get also packages partially matching use option '--match-substrings'\n"
+        "or use wildcards (*?) in name.\n"
         "\n"
         "  Command options:\n"
+        "-s, --match-substrings    Print information for packages partially matching name.\n"
         "-r, --repo <alias|#|URI>  Work only with the specified repository.\n"
         "-t, --type <type>         Type of package (%s).\n"
         "                          Default: %s.\n"
-        "    --requires            Show also requires and prerequires.\n"
-        "    --recommends          Show also recommends."
+        "    --provides            Show provides.\n"
+        "    --requires            Show requires and prerequires.\n"
+        "    --conflicts           Show conflicts.\n"
+        "    --obsoletes           Show obsoletes.\n"
+        "    --recommends          Show recommends.\n"
+        "    --suggests            Show suggests.\n"
       ), "package, patch, pattern, product", "package");
 
     break;
@@ -2041,7 +2253,7 @@ void Zypper::processCommandOptions()
       "\n"
       "Show detailed information for patches.\n"
       "\n"
-      "This is a rug compatibility alias for '%s'.\n"
+      "This is an alias for '%s'.\n"
     ), "zypper info -t patch");
     break;
   }
@@ -2060,7 +2272,7 @@ void Zypper::processCommandOptions()
       "\n"
       "Show detailed information for patterns.\n"
       "\n"
-      "This is a rug compatibility alias for '%s'.\n"
+      "This is an alias for '%s'.\n"
     ), "zypper info -t pattern");
     break;
   }
@@ -2079,7 +2291,7 @@ void Zypper::processCommandOptions()
       "\n"
       "Show detailed information for products.\n"
       "\n"
-      "This is a rug compatibility alias for '%s'.\n"
+      "This is an alias for '%s'.\n"
     ), "zypper info -t product");
     break;
   }
@@ -2183,6 +2395,7 @@ void Zypper::processCommandOptions()
   {
     static struct option options[] =
     {
+      {"type", required_argument, 0, 't'},
       {"repo", required_argument, 0, 'r'},
       // rug compatiblity (although rug does not seem to support this)
       {"catalog", required_argument, 0, 'c'},
@@ -2198,7 +2411,9 @@ void Zypper::processCommandOptions()
       "\n"
       "  Command options:\n"
       "-r, --repo <alias|#|URI>  Remove only locks with specified repository.\n"
-    ), "zypper locks");
+      "-t, --type <type>         Type of package (%s).\n"
+      "                          Default: %s.\n"
+    ), "zypper locks", "package, patch, pattern, product", "package");
     break;
   }
 
@@ -2313,10 +2528,80 @@ void Zypper::processCommandOptions()
     _command_help = _(
       "ps\n"
       "\n"
-      "List running processes which use files deleted by recent upgrades.\n"
+      "List running processes which might use files deleted by recent upgrades.\n"
       "\n"
       "This command has no additional options.\n"
     );
+    break;
+  }
+
+
+  case ZypperCommand::DOWNLOAD_e:
+  {
+    shared_ptr<DownloadOptions> myOpts( new DownloadOptions() );
+    _commandOptions = myOpts;
+    static struct option options[] =
+    {
+      {"help",			no_argument,		0, 'h'},
+      {"all-matches",		no_argument,		&myOpts->_allmatches, 1},
+      {"dry-run",		no_argument,		&myOpts->_dryrun, 1},
+      {0, 0, 0, 0}
+    };
+    specific_options = options;
+    _command_help = _(
+      "download [options] <packages>...\n"
+      "\n"
+      "Download rpms specified on the commandline to a local directory.\n"
+      "Per default packages are downloaded to the libzypp package cache\n"
+      "(/var/cache/zypp/packages), but this can be changed by using the\n"
+      "global --pkg-cache-dir option.\n"
+      "In XML output a <download-result> node is written for each\n"
+      "package zypper tried to downlad. Upon success the local path is\n"
+      "is found in 'download-result/localpath@path'.\n"
+      "\n"
+      "  Command options:\n"
+      "--all-matches        Download all versions matching the commandline\n"
+      "                     arguments. Otherwise only the best version of\n"
+      "                     each matching package is downloaded.\n"
+      "--dry-run            Don't download any package, just report what\n"
+      "                     would be done.\n"
+    );
+    break;
+  }
+
+
+  case ZypperCommand::SOURCE_DOWNLOAD_e:
+  {
+    shared_ptr<SourceDownloadOptions> myOpts( new SourceDownloadOptions() );
+    _commandOptions = myOpts;
+    static struct option options[] =
+    {
+      {"help",			no_argument, 0, 'h'},
+      {"directory",		required_argument, 0, 'd'},
+//       {"manifest",		no_argument, &myOpts->_manifest, 1},
+//       {"no-manifest",		no_argument, &myOpts->_manifest, 0},
+      {"delete",		no_argument, &myOpts->_delete, 1},
+      {"no-delete",		no_argument, &myOpts->_delete, 0},
+      {"status",		no_argument, &myOpts->_dryrun, 1},
+      {0, 0, 0, 0}
+    };
+    specific_options = options;
+    _command_help = _(
+      "source-download\n"
+      "\n"
+      "Download source rpms for all installed packages to a local directory.\n"
+      "\n"
+      "  Command options:\n"
+      "-d, --directory <dir>\n"
+      "                     Download all source rpms to this directory.\n"
+      "                     Default: /var/cache/zypper/source-download\n"
+      "--delete             Delete extraneous source rpms in the local directory.\n"
+      "--no-delete          Do not delete extraneous source rpms.\n"
+      "--status             Don't download any source rpms,\n"
+      "                     but show which source rpms are missing or extraneous.\n"
+    );
+//       "--manifest           Write MANIFEST of packages and coresponding source rpms.\n"
+//       "--no-manifest        Do not write MANIFEST.\n"
     break;
   }
 
@@ -2363,7 +2648,7 @@ void Zypper::processCommandOptions()
     };
     specific_options = options;
     _command_help = _(
-      // translators: this is just a rug-compatiblity command
+      // translators: this is just a legacy command
       "service-types (st)\n"
       "\n"
       "List available service types.\n"
@@ -2379,7 +2664,7 @@ void Zypper::processCommandOptions()
     };
     specific_options = options;
     _command_help = _(
-      // translators: this is just a rug-compatiblity command
+      // translators: this is just a legacy command
       "list-resolvables (lr)\n"
       "\n"
       "List available resolvable types.\n"
@@ -2419,8 +2704,6 @@ void Zypper::processCommandOptions()
     static struct option search_options[] = {
       {"installed-only", no_argument, 0, 'i'},
       {"uninstalled-only", no_argument, 0, 'u'},
-      {"match-all", no_argument, 0, 0},
-      {"match-any", no_argument, 0, 0},
       {"match-substrings", no_argument, 0, 0},
       {"match-words", no_argument, 0, 0},
       {"match-exact", no_argument, 0, 0},
@@ -2435,8 +2718,7 @@ void Zypper::processCommandOptions()
     _command_help = str::form(_(
       "patch-search [options] [querystring...]\n"
       "\n"
-      "Search for patches matching given search strings. This is a"
-      " rug-compatibility alias for '%s'. See zypper's manual page for details.\n"
+      "Search for patches matching given search strings. This is an alias for '%s'.\n"
     ), "zypper -r search -t patch --detail ...");
     break;
   }
@@ -2450,11 +2732,10 @@ void Zypper::processCommandOptions()
     };
     specific_options = options;
     _command_help = _(
-      // translators: this is just a rug-compatiblity command
+      // translators: this is just a legacy command
       "ping [options]\n"
       "\n"
       "This command has dummy implementation which always returns 0.\n"
-      "It is provided for compatibility with rug.\n"
     );
     break;
   }
@@ -2491,7 +2772,7 @@ void Zypper::processCommandOptions()
 
   if (optind < argc())
   {
-    ostringstream s;
+    std::ostringstream s;
     s << _("Non-option program arguments: ");
     while (optind < argc())
     {
@@ -2511,88 +2792,100 @@ void Zypper::doCommand()
   if (runningHelp()) { out().info(_command_help, Out::QUIET); return; }
 
   // === ZYpp lock ===
-
-  try
+  switch ( command().toEnum() )
   {
-    const char *roh = getenv("ZYPP_READONLY_HACK");
-    if (roh != NULL && roh[0] == '1')
-      zypp_readonly_hack::IWantIt ();
+    case ZypperCommand::PS_e:
+      // bnc#703598: Quick fix as few commands do not need a zypp lock
+      break;
 
-    else if (   command() == ZypperCommand::LIST_REPOS
-             || command() == ZypperCommand::LIST_SERVICES
-             || command() == ZypperCommand::TARGET_OS )
-      zypp_readonly_hack::IWantIt (); // #247001, #302152
-
-    God = zypp::getZYpp();
-  }
-  catch (ZYppFactoryException & excpt_r)
-  {
-    ZYPP_CAUGHT (excpt_r);
-
-    bool still_locked = true;
-    // check for packagekit (bnc #580513)
-    if (excpt_r.lockerName().find("packagekitd") != string::npos)
-    {
-      // ask user wheter to tell it to quit
-      out().info(_(
-        "PackageKit is blocking zypper. This happens if you have an"
-        " updater applet or other software management application using"
-        " PackageKit running."
-      ));
-
-      bool reply = read_bool_answer(
-          PROMPT_PACKAGEKIT_QUIT, _("Tell PackageKit to quit?"), false);
-
-      // tell it to quit
-      while (reply && still_locked)
+    default:
+      try
       {
-        packagekit_suggest_quit();
-        ::sleep(2);
-        if (packagekit_running())
-        {
-          out().info(_("PackageKit is still running (probably busy)."));
-          reply = read_bool_answer(
-              PROMPT_PACKAGEKIT_QUIT, _("Try again?"), false);
-        }
-        else
-          still_locked = false;
+	if ( _gopts.changedRoot && _gopts.root_dir != "/" )
+	{
+	  // bnc#575096: Quick fix
+	  ::setenv( "ZYPP_LOCKFILE_ROOT", _gopts.root_dir.c_str(), 0 );
+	}
+
+	const char *roh = getenv("ZYPP_READONLY_HACK");
+	if (roh != NULL && roh[0] == '1')
+	  zypp_readonly_hack::IWantIt ();
+
+	else if (   command() == ZypperCommand::LIST_REPOS
+	  || command() == ZypperCommand::LIST_SERVICES
+	  || command() == ZypperCommand::TARGET_OS )
+	  zypp_readonly_hack::IWantIt (); // #247001, #302152
+
+	  God = zypp::getZYpp();
       }
-    }
-
-    if (still_locked)
-    {
-      ERR  << "A ZYpp transaction is already in progress." << endl;
-      out().error(excpt_r.asString());
-
-      setExitCode(ZYPPER_EXIT_ERR_ZYPP);
-      throw (ExitRequestException("ZYpp locked"));
-    }
-    else
-    {
-      // try to get the lock again
-      try { God = zypp::getZYpp(); }
-      catch (ZYppFactoryException & e)
+      catch (ZYppFactoryException & excpt_r)
       {
-        // this should happen only rarely, so no special handling here
-        ERR  << "still locked." << endl;
-        out().error(e.asString());
+	ZYPP_CAUGHT (excpt_r);
 
-        setExitCode(ZYPPER_EXIT_ERR_ZYPP);
-        throw (ExitRequestException("ZYpp locked"));
+	bool still_locked = true;
+	// check for packagekit (bnc #580513)
+	if (excpt_r.lockerName().find("packagekitd") != string::npos)
+	{
+	  // ask user wheter to tell it to quit
+	  out().info(_(
+	    "PackageKit is blocking zypper. This happens if you have an"
+	    " updater applet or other software management application using"
+	    " PackageKit running."
+	  ));
+
+	  bool reply = read_bool_answer(
+	    PROMPT_PACKAGEKIT_QUIT, _("Tell PackageKit to quit?"), false);
+
+	  // tell it to quit
+          while (reply && still_locked)
+          {
+            packagekit_suggest_quit();
+            ::sleep(2);
+            if (packagekit_running())
+            {
+              out().info(_("PackageKit is still running (probably busy)."));
+              reply = read_bool_answer(
+                PROMPT_PACKAGEKIT_QUIT, _("Try again?"), false);
+            }
+            else
+              still_locked = false;
+          }
+	}
+
+	if (still_locked)
+	{
+	  ERR  << "A ZYpp transaction is already in progress." << endl;
+	  out().error(excpt_r.asString());
+
+	  setExitCode(ZYPPER_EXIT_ZYPP_LOCKED);
+	  throw (ExitRequestException("ZYpp locked"));
+	}
+	else
+	{
+	  // try to get the lock again
+	  try { God = zypp::getZYpp(); }
+	  catch (ZYppFactoryException & e)
+	  {
+	    // this should happen only rarely, so no special handling here
+	    ERR  << "still locked." << endl;
+	    out().error(e.asString());
+
+	    setExitCode(ZYPPER_EXIT_ZYPP_LOCKED);
+	    throw (ExitRequestException("ZYpp locked"));
+	  }
+	}
       }
-    }
+      catch (Exception & excpt_r)
+      {
+	ZYPP_CAUGHT (excpt_r);
+	out().error(excpt_r.msg());
+	setExitCode(ZYPPER_EXIT_ERR_ZYPP);
+	throw (ExitRequestException("ZYpp error, cannot get ZYpp lock"));
+      }
   }
-  catch (Exception & excpt_r)
-  {
-    ZYPP_CAUGHT (excpt_r);
-    out().error(excpt_r.msg());
-    setExitCode(ZYPPER_EXIT_ERR_ZYPP);
-    throw (ExitRequestException("ZYpp locked"));
-  }
-
   // === execute command ===
 
-  MIL << "Going to process command " << command().toEnum() << endl;
+  MIL << "Going to process command " << command() << endl;
   ResObject::Kind kind;
 
   switch(command().toEnum())
@@ -2639,7 +2932,7 @@ void Zypper::doCommand()
 
     // needed to be able to retrieve target distribution
     init_target(*this);
-    this->_gopts.rm_options.servicesTargetDistro =
+    _gopts.rm_options.servicesTargetDistro =
       God->target()->targetDistribution();
 
     initRepoManager();
@@ -2876,21 +3169,21 @@ void Zypper::doCommand()
 
     // indeterminate indicates the user has not specified the values
 
-    TriBool enabled = indeterminate;
+    TriBool enabled( indeterminate );
     if (copts.count("disable"))
       enabled = false;
 
-    TriBool autorefresh = indeterminate;
+    TriBool autorefresh( indeterminate );
     if (copts.count("refresh"))
       autorefresh = true;
 
-    TriBool keep_pkgs;
+    TriBool keep_pkgs( indeterminate );
     if (copts.count("keep-packages"))
       keep_pkgs = true;
     else if (copts.count("no-keep-packages"))
       keep_pkgs = false;
 
-    TriBool gpgCheck;
+    TriBool gpgCheck( indeterminate );
     if (copts.count("gpgcheck"))
       gpgCheck = true;
     else if (copts.count("no-gpgcheck"))
@@ -2967,15 +3260,15 @@ void Zypper::doCommand()
         if (copts.count("check"))
         {
           if (!copts.count("no-check"))
-            this->_gopts.rm_options.probe = true;
+            _gopts.rm_options.probe = true;
           else
-            this->out().warning(str::form(
+            out().warning(str::form(
               _("Cannot use %s together with %s. Using the %s setting."),
               "--check", "--no-check", "zypp.conf")
                 ,Out::QUIET);
         }
         else if (copts.count("no-check"))
-          this->_gopts.rm_options.probe = false;
+          _gopts.rm_options.probe = false;
 
         warn_if_zmd();
 
@@ -3037,7 +3330,7 @@ void Zypper::doCommand()
     if (command() == ZypperCommand::REMOVE_REPO)
     {
       // must store repository before remove to ensure correct match number
-      set<RepoInfo,RepoInfoAliasComparator> repo_to_remove;
+      std::set<RepoInfo,RepoInfoAliasComparator> repo_to_remove;
       for_(it, _arguments.begin(), _arguments.end())
       {
         RepoInfo repo;
@@ -3060,7 +3353,7 @@ void Zypper::doCommand()
     }
     else
     {
-      set<repo::RepoInfoBase_Ptr, ServiceAliasComparator> to_remove;
+      std::set<repo::RepoInfoBase_Ptr, ServiceAliasComparator> to_remove;
       for_(it, _arguments.begin(), _arguments.end())
       {
         repo::RepoInfoBase_Ptr s;
@@ -3244,7 +3537,7 @@ void Zypper::doCommand()
       }
       // needed to be able to retrieve target distribution
       init_target(*this);
-      this->_gopts.rm_options.servicesTargetDistro =
+      _gopts.rm_options.servicesTargetDistro =
             God->target()->targetDistribution();
       initRepoManager();
       refresh_services(*this);
@@ -3341,12 +3634,11 @@ void Zypper::doCommand()
       throw ExitRequestException("not implemented");
     }
 
-    // can't remove pattern (for now)
-    if (kind == ResKind::pattern && !install_not_remove)
+     // can't remove source package
+    if (kind == ResKind::srcpackage && !install_not_remove)
     {
-      //! \todo define and implement pattern removal (bnc #407040)
       out().error(
-          _("Uninstallation of a pattern is currently not defined and implemented."));
+          _("Uninstallation of a source package not defined and implemented."));
       setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
       throw ExitRequestException("not implemented");
     }
@@ -3440,13 +3732,9 @@ void Zypper::doCommand()
       repo.setPackagesPath(runtimeData().tmpdir);
 
       // shut up zypper
-      Out::Verbosity tmp = out().verbosity();
-      out().setVerbosity(Out::QUIET);
-
+      SCOPED_VERBOSITY( out(), Out::QUIET );
       add_repo(*this, repo);
       refresh_repo(*this, repo);
-
-      out().setVerbosity(tmp);
     }
     // no rpms and no other arguments either
     else if (_arguments.empty())
@@ -3465,9 +3753,14 @@ void Zypper::doCommand()
 
     if ( _rdata.repos.empty() )
     {
-      out().error(_("Warning: No repositories defined."
+      out().warning(_("No repositories defined."
           " Operating only with the installed resolvables."
           " Nothing can be installed."));
+      if ( command() == ZypperCommand::INSTALL )
+      {
+	setExitCode(ZYPPER_EXIT_NO_REPOS);
+	return;
+      }
     }
 
     // prepare target
@@ -3488,6 +3781,8 @@ void Zypper::doCommand()
     SolverRequester::Options sropts;
     if (copts.find("force") != copts.end())
       sropts.force = true;
+    if (copts.find("oldpackage") != copts.end())
+      sropts.oldpackage = true;
     sropts.force_by_cap  = copts.find("capability") != copts.end();
     sropts.force_by_name = copts.find("name") != copts.end();
     if (sropts.force)
@@ -3524,8 +3819,9 @@ void Zypper::doCommand()
 
     sr.printFeedback(out());
 
-    if (sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_NAME) ||
-        sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_CAP))
+    if (!globalOpts().ignore_unknown &&
+        (sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_NAME) ||
+         sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_CAP)))
     {
       setExitCode(ZYPPER_EXIT_INF_CAP_NOT_FOUND);
       if (globalOpts().non_interactive)
@@ -3554,11 +3850,10 @@ void Zypper::doCommand()
     }
 
     initRepoManager();
-
+    init_target(*this);
     init_repos(*this);
     if (exitCode() != ZYPPER_EXIT_OK)
       return;
-    init_target(*this);
     // if (!copts.count("no-build-deps")) // if target resolvables are not read, solver produces a weird result
     load_target_resolvables(*this);
     load_repo_resolvables(*this);
@@ -3601,7 +3896,7 @@ void Zypper::doCommand()
 
     if ( _rdata.repos.empty() )
     {
-      out().error(_("Warning: No repositories defined."
+      out().warning(_("No repositories defined."
           " Operating only with the installed resolvables."
           " Nothing can be installed."));
     }
@@ -3637,11 +3932,24 @@ void Zypper::doCommand()
     if (copts.count("installed-only"))
       inst_notinst = true;
     //  query.setInstalledOnly();
-    //if (copts.count("match-any")) options.setMatchAny();
-    if (copts.count("match-words"))
-      query.setMatchWord();
+
     if (copts.count("match-exact"))
+    {
       query.setMatchExact();
+    }
+
+    if (copts.count("match-words"))
+    {
+      if ( query.matchExact() )
+      {
+        out().info(_("Mode is set to 'match-exact'") );
+      }
+      else
+      {
+        query.setMatchWord();
+      }
+    }
+
     if (copts.count("case-sensitive"))
       query.setCaseSensitive();
 
@@ -3682,23 +3990,96 @@ void Zypper::doCommand()
         {
           out().warning(boost::str(format(
             _("Specified repository '%s' is disabled."))
-              % (config().show_alias ? repo_it->alias() : repo_it->name())));
+              % repo_it->asUserString() ));
         }
       }
     }
 
-    for(vector<string>::const_iterator it = _arguments.begin();
-        it != _arguments.end(); ++it)
+    bool details = false;
+    // add argument strings and attributes to query
+    for ( vector<string>::const_iterator it = _arguments.begin();
+          it != _arguments.end(); ++it )
     {
-      query.addString(*it);
-      if (!query.matchGlob() && it->find_first_of("?*") != string::npos)
+      Capability cap = Capability::guessPackageSpec( *it );
+      string name = cap.detail().name().asString();
+
+      if ( !query.matchRegex() && !query.matchExact() && name.find_first_of("?*") != string::npos )
         query.setMatchGlob();
-    }
-    query.addAttribute(sat::SolvAttr::name);
-    if (cOpts().count("search-descriptions"))
-    {
-      query.addAttribute(sat::SolvAttr::summary);
-      query.addAttribute(sat::SolvAttr::description);
+
+      if ( cap.detail().isVersioned() )
+      {
+        // show details if any search string includes an edition
+        details = true;
+      }
+
+      if ( !query.matchGlob() && !query.matchExact() && str::regex_match(name.c_str(), string("^/.*/$")) )
+      {
+        name = name.substr( 1, name.size()-2 );
+        query.setMatchRegex();
+      }
+
+      zypp::sat::SolvAttr attr = sat::SolvAttr::name;
+
+      if (copts.count("provides"))
+      {
+        attr =  zypp::sat::SolvAttr::provides;
+        query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+        if ( str::regex_match(name.c_str(), string("^/")) )
+        {
+          // in case of path names also search in file list
+          attr = zypp::sat::SolvAttr::filelist;
+          query.setFilesMatchFullPath(true);
+          query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+        }
+      }
+      if (copts.count("requires"))
+      {
+        attr =  zypp::sat::SolvAttr::requires;
+        query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+      }
+      if (copts.count("recommends"))
+      {
+        attr = zypp::sat::SolvAttr::recommends;
+        query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+      }
+      if (copts.count("suggests"))
+      {
+        attr =  zypp::sat::SolvAttr::suggests;
+        query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+      }
+      if (copts.count("conflicts"))
+      {
+        attr = zypp::sat::SolvAttr::conflicts;
+        query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+      }
+      if (copts.count("obsoletes"))
+      {
+        attr = zypp::sat::SolvAttr::obsoletes;
+        query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+      }
+      if (copts.count("file-list"))
+      {
+        attr = zypp::sat::SolvAttr::filelist;
+	query.setFilesMatchFullPath( true );
+        query.addDependency( attr , name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+      }
+      if ( attr == sat::SolvAttr::name || copts.count("name") )
+      {
+        // addDependency can also be used for sat::SolvAttr::name
+        query.addDependency( sat::SolvAttr::name, name, cap.detail().op(), cap.detail().ed(), Arch(cap.detail().arch()) );
+      }
+      if ( attr != sat::SolvAttr::name && cap.detail().isVersioned() )
+      {
+        // search in dependencies including edition only makes sense with exact match because
+        // all strings without an edition match to all editions
+        query.setMatchExact();
+      }
+      // for search in summary and description use addAttribute
+      if ( cOpts().count("search-descriptions") )
+      {
+        query.addAttribute(sat::SolvAttr::summary, name );
+        query.addAttribute(sat::SolvAttr::description, name );
+      }
     }
 
     init_target(*this);
@@ -3718,10 +4099,20 @@ void Zypper::doCommand()
         FillPatchesTable callback(t, inst_notinst);
         invokeOnEach(query.poolItemBegin(), query.poolItemEnd(), callback);
       }
-      else if (_gopts.is_rug_compatible || _copts.count("details"))
+      else if (_gopts.is_rug_compatible || _copts.count("details") || details)
       {
         FillSearchTableSolvable callback(t, inst_notinst);
         invokeOnEach(query.selectableBegin(), query.selectableEnd(), callback);
+      }
+      else if ( _copts.count("verbose") )
+      {
+        FillSearchTableSolvable callback(t, inst_notinst);
+        // Option 'verbose' shows where (e.g. in 'requires', 'name') the search has matched.
+        // Info is available from PoolQuery::const_iterator.
+        for_( it, query.begin(), query.end() )
+        {
+          callback( it );
+        }
       }
       else
       {
@@ -3730,7 +4121,10 @@ void Zypper::doCommand()
       }
 
       if (t.empty())
+      {
         out().info(_("No packages found."), Out::QUIET);
+        setExitCode(ZYPPER_EXIT_INF_CAP_NOT_FOUND);
+      }
       else
       {
         cout << endl; //! \todo  out().separator()?
@@ -3842,6 +4236,11 @@ void Zypper::doCommand()
       return;
     load_resolvables(*this);
     // needed to compute status of PPP
+    // Currently CleandepsOnRemove adds information about user selected packages,
+    // which enhances the computation of unneeded packages. Might be superfluous in the future.
+    AutoDispose<bool> restoreCleandepsOnRemove( God->resolver()->cleandepsOnRemove(),
+						bind( &Resolver::setCleandepsOnRemove, God->resolver(), _1 ) );
+    God->resolver()->setCleandepsOnRemove( true );
     resolve(*this);
 
     switch (command().toEnum())
@@ -3866,6 +4265,10 @@ void Zypper::doCommand()
 
   case ZypperCommand::WHAT_PROVIDES_e:
   {
+    // The "what-provides" now is included in "search" command, e.g.
+    // zypper what-provides 'zypper>1.6'
+    // zypper se --match-exact --provides 'zypper>1.6'
+
     if (runningHelp()) { out().info(_command_help, Out::QUIET); return; }
 
     if (_arguments.empty())
@@ -4106,8 +4509,7 @@ void Zypper::doCommand()
     else
     {
       SolverRequester::Options sropts;
-      if (copts.find("force") !=
-copts.end())
+      if (copts.find("force") != copts.end())
         sropts.force = true;
       sropts.best_effort = best_effort;
       sropts.skip_interactive = skip_interactive; // bcn #647214
@@ -4179,8 +4581,9 @@ copts.end())
 
       sr.printFeedback(out());
 
-      if (sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_NAME) ||
-          sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_CAP))
+      if (!globalOpts().ignore_unknown &&
+          (sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_NAME) ||
+           sr.hasFeedback(SolverRequester::Feedback::NOT_FOUND_CAP)))
       {
         setExitCode(ZYPPER_EXIT_INF_CAP_NOT_FOUND);
         if (globalOpts().non_interactive)
@@ -4223,7 +4626,7 @@ copts.end())
 
     if (!copts.count("repo") && !copts.count("from")
         && repoManager().knownRepositories().size() > 1)
-      this->out().warning(str::form(_(
+      out().warning(str::form(_(
         "You are about to do a distribution upgrade with all enabled"
         " repositories. Make sure these repositories are compatible before you"
         " continue. See '%s' for more information about this command."),
@@ -4253,7 +4656,7 @@ copts.end())
     {
       out().error(_("Required argument missing."));
       ERR << "Required argument missing." << endl;
-      ostringstream s;
+      std::ostringstream s;
       s << _("Usage") << ':' << endl;
       s << _command_help;
       out().info(s.str());
@@ -4280,18 +4683,6 @@ copts.end())
       if (kind == ResObject::Kind ()) {
         out().error(boost::str(format(
           _("Unknown package type '%s'.")) % skind));
-        setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
-        return;
-      }
-    }
-
-    // XXX: would requires/recommends make sense for pattern etc.?
-    if (copts.count("requires") || copts.count("recommends"))
-    {
-      if (kind != ResKind::package && kind != ResKind::patch)
-      {
-        out().error(boost::str(format(
-          _("Type '%s' does not support %s.")) % kind % "--requires/--recommends"));
         setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
         return;
       }
@@ -4387,21 +4778,34 @@ copts.end())
       return;
     }
 
-    if (_arguments.size() < 1)
+    if (_arguments.empty())
     {
       report_required_arg_missing(out(), _command_help);
       setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
       return;
     }
 
-    initRepoManager();
-    init_target(*this);
-    init_repos(*this);
-    if (exitCode() != ZYPPER_EXIT_OK)
-      return;
-    load_resolvables(*this);
+    ResKindSet kinds;
+    if (copts.count("type"))
+    {
+      std::list<std::string>::const_iterator it;
+      for (it = copts["type"].begin(); it != copts["type"].end(); ++it)
+      {
+        kind = string_to_kind( *it );
+        if (kind == ResObject::Kind())
+        {
+          out().error(boost::str(format(
+            _("Unknown package type '%s'.")) % *it));
+          setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
+          return;
+        }
+        kinds.insert(kind);
+      }
+    }
+    //else
+    //  let remove_locks determine the appropriate type
 
-    remove_locks(*this, _arguments);
+    remove_locks(*this, _arguments, kinds);
 
     break;
   }
@@ -4533,10 +4937,10 @@ copts.end())
     }
 
     initRepoManager();
+    init_target(*this);
     init_repos(*this);
     if (exitCode() != ZYPPER_EXIT_OK)
       return;
-    init_target(*this);
     // now load resolvables:
     load_resolvables(*this);
     // needed to compute status of PPP
@@ -4564,6 +4968,59 @@ copts.end())
     break;
   }
 
+
+  case ZypperCommand::DOWNLOAD_e:
+  {
+    if (runningHelp()) { out().info(_command_help, Out::QUIET); return; }
+
+    if (_arguments.empty())
+    {
+      report_required_arg_missing(out(), _command_help);
+      setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
+      return;
+    }
+
+    init_target( *this );
+    initRepoManager();
+    init_repos( *this );
+    if ( exitCode() != ZYPPER_EXIT_OK )
+      return;
+    // now load resolvables:
+    load_resolvables( *this );
+
+    shared_ptr<DownloadOptions> myOpts( assertCommandOptions<DownloadOptions>() );
+
+    if ( _copts.count( "dry-run" ) )
+      myOpts->_dryrun = true;
+
+    download( *this );
+    break;
+  }
+
+
+  case ZypperCommand::SOURCE_DOWNLOAD_e:
+  {
+    if (runningHelp()) { out().info(_command_help, Out::QUIET); return; }
+
+    if (!_arguments.empty())
+    {
+      report_too_many_arguments(_command_help);
+      setExitCode(ZYPPER_EXIT_ERR_INVALID_ARGS);
+      return;
+    }
+
+    shared_ptr<SourceDownloadOptions> myOpts( assertCommandOptions<SourceDownloadOptions>() );
+
+    if ( _copts.count( "directory" ) )
+      myOpts->_directory = _copts["directory"].back();	// last wins
+
+    if ( _copts.count( "dry-run" ) )
+      myOpts->_dryrun = true;
+
+    sourceDownload( *this );
+
+    break;
+  }
 
   // -----------------------------( shell )------------------------------------
 
@@ -4650,12 +5107,8 @@ void Zypper::cleanup()
     if (it->alias() == TMP_RPM_REPO_ALIAS)
     {
       // shut up zypper
-      Out::Verbosity tmp = out().verbosity();
-      out().setVerbosity(Out::QUIET);
-
+      SCOPED_VERBOSITY( out(), Out::QUIET );
       remove_repo(*this, *it);
-
-      out().setVerbosity(tmp);
       break;
     }
 }

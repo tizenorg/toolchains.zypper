@@ -19,6 +19,8 @@ SET (zypper_HEADERS
   Table.h
   locks.h
   update.h
+  download.h
+  source-download.h
   solve-commit.h
   PackageArgs.h
   SolverRequester.h
@@ -27,6 +29,7 @@ SET (zypper_HEADERS
   callbacks/media.h
   callbacks/rpm.h
   callbacks/repo.h
+  callbacks/job.h
 )
 
 SET( zypper_SRCS
@@ -40,6 +43,8 @@ SET( zypper_SRCS
   Table.cc
   locks.cc
   update.cc
+  download.cc
+  source-download.cc
   solve-commit.cc
   PackageArgs.cc
   RequestFeedback.cc
@@ -55,6 +60,7 @@ SET( zypper_out_HEADERS
   output/OutXML.h
   output/prompt.h
   output/AliveCursor.h
+  output/Utf8.h
 )
 
 SET( zypper_out_SRCS
@@ -91,11 +97,11 @@ SET( zypper_utils_SRCS
   ${zypper_utils_HEADERS}
 )
 
-ADD_LIBRARY( zypper_lib ${zypper_SRCS} ${zypper_out_SRCS} ${zypper_utils_SRCS} )
+ADD_LIBRARY( zypper_lib STATIC ${zypper_SRCS} ${zypper_out_SRCS} ${zypper_utils_SRCS} )
 TARGET_LINK_LIBRARIES( zypper_lib ${ZYPP_LIBRARY} ${READLINE_LIBRARY} -laugeas ${AUGEAS_LIBRARY} )
 
 ADD_EXECUTABLE( zypper main.cc )
-TARGET_LINK_LIBRARIES( zypper zypper_lib ${ZYPP_LIBRARY} ${READLINE_LIBRARY} -laugeas ${AUGEAS_LIBRARY} -lrt )
+TARGET_LINK_LIBRARIES( zypper zypper_lib ${ZYPP_LIBRARY} ${READLINE_LIBRARY} -lncurses -laugeas ${AUGEAS_LIBRARY} -lrt )
 
 
 INSTALL(
@@ -113,15 +119,10 @@ INSTALL(  FILES
 # zypp-refresh utility
 ADD_EXECUTABLE( zypp-refresh zypp-refresh.cc )
 TARGET_LINK_LIBRARIES( zypp-refresh ${ZYPP_LIBRARY} )
+SET_TARGET_PROPERTIES( zypp-refresh PROPERTIES LINK_FLAGS "-pie -Wl,-z,relro,-z,now")
+SET_TARGET_PROPERTIES( zypp-refresh PROPERTIES COMPILE_FLAGS "-fwhole-program -fpie -fPIE")
 INSTALL(
   TARGETS zypp-refresh
-  RUNTIME DESTINATION ${INSTALL_PREFIX}/sbin
-)
-
-ADD_EXECUTABLE( zypp-refresh-wrapper zypp-refresh-wrapper.c )
-TARGET_LINK_LIBRARIES( zypp-refresh-wrapper ${ZYPP_LIBRARY} )
-INSTALL(
-  TARGETS zypp-refresh-wrapper
   RUNTIME DESTINATION ${INSTALL_PREFIX}/sbin
 )
 
@@ -133,7 +134,7 @@ INSTALL(
 )
 
 
-# installation_sources script 
+# installation_sources script
 INSTALL(
   PROGRAMS installation_sources
   DESTINATION ${INSTALL_PREFIX}/bin

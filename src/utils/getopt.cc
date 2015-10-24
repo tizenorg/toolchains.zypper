@@ -1,7 +1,7 @@
 #include "getopt.h"
 #include "main.h"
 #include <iostream>
-#include "zypp/base/String.h"
+#include <zypp/base/String.h>
 #include "Zypper.h"
 
 using namespace std;
@@ -29,7 +29,10 @@ short2long_t make_short2long (const struct option *longopts) {
   short2long_t result;
   for (; longopts && longopts->name; ++longopts) {
     if (!longopts->flag && longopts->val) {
-      result[longopts->val] = longopts->name;
+      // on the fly check for duplicate short args
+      if ( ! result.insert( short2long_t::value_type( longopts->val, longopts->name ) ).second ) {
+	ZYPP_THROW(Exception(str::Str() << "duplicate short option -" << (char)longopts->val << " for --" << longopts->name << " and --" << result[longopts->val] ));
+      }
     }
   }
   return result;

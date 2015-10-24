@@ -2,8 +2,8 @@
 #include <signal.h>
 //#include <readline/readline.h>
 
-#include "zypp/base/LogTools.h"
-#include "zypp/base/LogControl.h"
+#include <zypp/base/LogTools.h>
+#include <zypp/base/LogControl.h>
 
 #include "main.h"
 #include "Zypper.h"
@@ -13,6 +13,7 @@
 #include "callbacks/repo.h"
 #include "callbacks/media.h"
 #include "callbacks/locks.h"
+#include "callbacks/job.h"
 #include "output/OutNormal.h"
 #include "utils/messages.h"
 
@@ -90,6 +91,7 @@ int main(int argc, char **argv)
     static KeyRingCallbacks keyring_callbacks;
     static DigestCallbacks digest_callbacks;
     static LocksCallbacks locks_callbacks;
+    static JobCallbacks job_callbacks;
   }
   catch (const zypp::Exception & e)
   {

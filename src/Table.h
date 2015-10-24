@@ -14,6 +14,9 @@
 #include <iosfwd>
 #include <list>
 #include <vector>
+
+#include <zypp/base/String.h>
+
 using std::string;
 using std::ostream;
 using std::list;
@@ -39,6 +42,9 @@ enum TableLineStyle {
 class Table;
 
 class TableRow {
+private:
+  void dumpDetails(ostream &stream, const Table & parent) const;
+
 public:
   //! Constructor. Reserve place for c columns.
   TableRow (unsigned c = 0) {
@@ -46,6 +52,8 @@ public:
   }
 
   void add (const string& s);
+
+  void addDetail (const string& s);
 
   // return number of columns
   unsigned int cols( void ) const;
@@ -72,8 +80,26 @@ public:
 
 private:
   container _columns;
+  container _details;
+
   friend class Table;
 };
+
+/** \relates TableRow Add colummn. */
+template<class _Tp>
+TableRow & operator<<( TableRow & tr, const _Tp & val )
+{
+  tr.add( zypp::str::asString( val ) );
+  return tr;
+}
+
+/** \relates TableRow Add colummn. */
+template<class _Tp>
+TableRow & operator<<( TableRow && tr, const _Tp & val )
+{
+  tr.add( zypp::str::asString( val ) );
+  return tr;
+}
 
 class TableHeader : public TableRow {
 public:
@@ -81,11 +107,10 @@ public:
   TableHeader (unsigned c = 0): TableRow (c) {}
 };
 
-inline
-TableRow& operator << (TableRow& tr, const string& s) {
-  tr.add (s);
-  return tr;
-}
+/** \relates TableHeader  Add colummn. */
+template<class _Tp>
+TableHeader & operator<<( TableHeader & th, const _Tp & val )
+{ static_cast<TableRow&>( th ) << val; return th; }
 
 /** \todo nice idea but poor interface */
 class Table {
@@ -105,10 +130,18 @@ public:
   void allowAbbrev(unsigned column);
   void margin(unsigned margin);
 
+  const TableHeader & header() const
+  { return _header; }
   const container & rows() const
+  { return _rows; }
+  container & rows()
   { return _rows; }
 
   Table ();
+
+  // poor workaroud missing column styles and table entry objects
+  void setEditionStyle( unsigned column )
+  { _editionStyle.insert( column ); }
 
 private:
   void dumpRule (ostream &stream) const;
@@ -138,8 +171,36 @@ private:
   //! Whether to wrap the table if it exceeds _screen_width
   bool _do_wrap;
 
+  mutable bool _inHeader;
+  std::set<unsigned> _editionStyle;
+  bool editionStyle( unsigned column ) const
+  { return _editionStyle.find( column ) != _editionStyle.end(); }
+
   friend class TableRow;
 };
+
+namespace table
+{
+  /** TableHeader manipulator */
+  struct EditionStyleSetter
+  {
+    EditionStyleSetter( Table & table_r, const std::string & header_r )
+    : _table( table_r )
+    , _header( header_r )
+    {}
+    Table & _table;
+    std::string _header;
+  };
+
+  /** \relates table::EditionStyleSetter */
+  inline TableHeader & operator<< ( TableHeader & th, const EditionStyleSetter & obj )
+  {
+    obj._table.setEditionStyle( th.cols() );
+    th.add( obj._header );
+    return th;
+  }
+}
+
 
 inline
 Table& operator << (Table& table, const TableRow& tr) {

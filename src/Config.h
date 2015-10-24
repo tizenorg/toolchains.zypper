@@ -11,7 +11,7 @@
 #include <string>
 #include <set>
 
-#include "zypp/Url.h"
+#include <zypp/Url.h>
 #include "Command.h"
 #include "utils/colors.h"
 
@@ -71,7 +71,7 @@ public:
 
   ConfigOption::Option parse(const std::string & strval_r);
 
-  const std::string asString() const;
+  std::string asString() const;
 
 private:
   Option _value;
@@ -88,9 +88,6 @@ struct Config
 
   /** Reads zypper.conf and stores the result */
   void read(const std::string & file = "");
-
-  /** Whether to show repo alias instead of name wherever we need to show repo*/
-  bool show_alias;
 
   /** Which columns to show in repo list by default (string of short options).*/
   std::string repo_list_columns;

@@ -33,9 +33,9 @@ module ZYpper =
 
   (* Matches an empty line and creates a node for it *)
   let empty = [ eol ]
-  
+
   (* Deletes optional whitespace and stores the rest 'till the end of line *)
-  let store_to_eol = del_opt_ws " " . store /([^ \t\n].*[^ \t\n])/ 
+  let store_to_eol = del_opt_ws " " . store /(.*[^ \t\n])?/
 
   (*
     Keyword regex.
@@ -49,23 +49,14 @@ module ZYpper =
   (* Matches one line of ## description and creates a node for it *)
   let description = [ label "description" . del /##/ "##" . store_to_eol? . eol ]
 
-  (*
-    Matches '#' and whitespace, creates a 'commented' note for it.
-    Used in 'option' to mark the option as commented.
-  *)
-  let commented  = [ label "commented" . del /#[ \t]*/ "# " ]
+  (* Matches '#' and whitespace, creates a 'commented' note for it. *)
+  let commented  = [ label "commented" . del /#[ \t]*/ "# " . store_to_eol? . eol ]
 
   (* Matches key=value, creates a new node out of key and stores the value *)
-  let kv = [ key kw_re . del /[ \t]*=[ \t]*/ " = " . store /[^# \t\n][^#\n]*/ ]
+  let kv = [ del_opt_ws "" . key kw_re . del /[ \t]*=[ \t]*/ " = " . store /[^ \t\n]([^\n]*[^ \t\n])?/ . eol ]
 
-  (*
-    An option consists of ## description, and an (optionally commented)
-    key=value pair.
-
-    This could be relaxed a bit in the future to allow more commented
-    keys, arbitrary comments, etc.
-  *)
-  let option = [ seq "option" . description* . commented? . del_opt_ws "" . kv . del_str "\n" ]
+  (* An option consists of ## description, # commented lines and an optionall key=value pair. *)
+  let option = [ seq "option" . description* . commented* . kv? ]
 
   (* ****************( section )*************** *)
 
@@ -80,7 +71,7 @@ module ZYpper =
 
 
   (* The lens matching and mapping the whole file *)
-  let lns = section_anon . section+
+  let lns = section_anon? . section+
 
   (*
     Filter for the xfm transformation.

@@ -1,4 +1,1233 @@
 -------------------------------------------------------------------
+Fri Jul 25 13:08:33 CEST 2014 - ma@suse.de
+
+- Rephrase 'verify' help text (bnc#885499)
+- version 1.11.11
+
+-------------------------------------------------------------------
+Mon Jul 14 17:49:48 CEST 2014 - ma@suse.de
+
+- refresh-services: add option --restore-status to undo user 
+  modifications applied to service repositories
+- drop rug compatibility in manpage docs and help output
+  (FATE#317708)
+- version 1.11.10
+
+-------------------------------------------------------------------
+Fri Jul 11 12:57:51 CEST 2014 - ma@suse.de
+
+- Enable --plus-content option (FATE#316287)
+- Add symlink yzpper -> zypper (bnc#885655)
+- version 1.11.9
+
+-------------------------------------------------------------------
+Wed Jun 11 07:38:37 CEST 2014 - ma@suse.de
+
+- Show patch severity (bnc#881373,FATE#312633)
+- Add '--details' to show the detailed installation summary (bnc#721823)
+- version 1.11.8
+
+-------------------------------------------------------------------
+Wed May 14 13:58:10 CEST 2014 - ma@suse.de
+
+- Notify about cached packages in download progess
+- Adjust download size by already cached packages in summary
+- Don't suggest 'zypper ps' after commit if --download-only
+- version 1.11.7
+
+-------------------------------------------------------------------
+Thu May  8 19:01:49 CEST 2014 - ma@suse.de
+
+- Notify user about expiring trusted keys; show trusted keys in 
+  verbose mode.
+- Enable --with-interactive for update too (bnc#827953)
+- Highlight missing update repos in product info
+- version 1.11.6
+
+-------------------------------------------------------------------
+Sun May  4 01:15:57 CEST 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu May  1 01:15:49 CEST 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Apr 29 12:01:05 CEST 2014 - ma@suse.de
+
+- download: fix xml output when already cached
+- version 1.11.5
+
+-------------------------------------------------------------------
+Tue Apr 15 17:27:28 CEST 2014 - ma@suse.de
+
+- Add 'download' command (Fate#317077)
+- version 1.11.4
+
+-------------------------------------------------------------------
+Sun Apr 13 20:42:58 CEST 2014 - ma@suse.de
+
+- more duplicate short options fixes
+- Fix typo in manpage
+- version 1.11.3
+
+-------------------------------------------------------------------
+Fri Apr 11 15:06:28 CEST 2014 - ma@suse.de
+
+- packages: Remove conflicting short options (-r repo/recommends)
+- version 1.11.2
+
+-------------------------------------------------------------------
+Fri Apr  4 14:30:07 CEST 2014 - ma@suse.de
+
+- info product: show CPEid and report enabled/missing update repos
+- Warn if /etc/products.d/baseproduct symlink is missing.
+- version 1.11.1
+
+-------------------------------------------------------------------
+Thu Mar 20 19:03:40 CET 2014 - ma@suse.de
+
+- Add summary messages for application (bnc#869439)
+- Rephrase some 'zypper ps' related messages (bnc#866300)
+- Message about uninstallable patters is obsolete (bnc#869616)
+- version 1.11.0
+
+-------------------------------------------------------------------
+Tue Mar 18 14:55:23 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Feb 23 21:06:34 CET 2014 - ma@suse.de
+
+- Don't include suggested packages in pattern content, as we can't
+  handle them (bnc#857671)
+- Fix computation of pattern status (bnc#864412)
+- fix wrong processing of translated plural forms (bnc#756195)
+- Fix result list of 'packages' command (bnc#864198)
+- version 1.10.8
+
+-------------------------------------------------------------------
+Fri Feb 14 13:54:16 CET 2014 - ma@suse.de
+
+- Print Content Ids of required update repos in product info (Fate#316160)
+- Update man page
+- version 1.10.7
+
+-------------------------------------------------------------------
+Tue Feb 11 21:24:24 CET 2014 - ma@suse.de
+
+- Show Product::endOfLife attribute in product info (Fate#316172)
+- Fix missing description tags and escaping in XML output.
+- Remove license text from test data (bnc#862471)
+- Add info command options to print dependencies.
+- version 1.10.6
+
+-------------------------------------------------------------------
+Sun Feb  2 01:14:35 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jan 30 18:52:12 CET 2014 - ma@suse.de
+
+- Fix eating all memory if stdout is not a tty.
+- version 1.10.5
+
+-------------------------------------------------------------------
+Thu Jan 30 01:14:17 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Jan 29 10:57:54 CET 2014 - ma@suse.de
+
+- Don't treat missing packages due to download mode as error in 
+  fileconflict check.
+- Add --replacefiles option to resolve file conflicts (bnc#673720)
+- version 1.10.4
+
+-------------------------------------------------------------------
+Sun Jan 26 01:14:20 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Fri Jan 24 08:13:39 CET 2014 - ma@suse.de
+
+- Add fileconflicts report (bnc#673720)
+- version 1.10.3
+
+-------------------------------------------------------------------
+Thu Jan 23 01:14:28 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Jan 20 14:21:34 CET 2014 - ma@suse.de
+
+- Zypper must refresh CD/DVD if no raw metadata are present. (bnc#859160)
+- Don't read metadata from CD/DVD repo if --no-check was used (bnc#859160)
+- Fix filelist search to match full paths instead of basenames only (bnc#859211)
+- Fix missing priority in RepoInfo::dumpAsXML (bnc#855845)
+- Rephrase 'Disabling repository...' message (bnc#856809)
+- Hint to SDB and openSUSE release notes
+- Add note that openSUSE only supports "zypper dup" one release at a time.
+- Fix grof .TP commands in manpage (bnc#854784)
+- Fix detailed printing of query matches (bnc#853167)
+- version 1.10.2
+
+-------------------------------------------------------------------
+Thu Jan 16 01:14:19 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jan 12 01:14:21 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jan  9 01:14:20 CET 2014 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Nov 21 12:20:31 CET 2013 - ma@suse.de
+
+- Embed item count in summary output (bnc#756195)
+- Fix callback handling if media download error is ignored.
+- Fix detection of multiversion packages in transaction summary (bnc#844373)
+- Improve prompt with more options hidden behind '?' (bnc#844373)
+- Improve computation of unneeded packages
+- Fix message typo (bnc#845619)
+- version 1.10.1
+
+-------------------------------------------------------------------
+Sun Oct 13 01:14:15 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Oct 10 01:14:28 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Oct  7 12:16:18 CEST 2013 - ma@suse.de
+
+- Avoid duplicated product entries (bnc#841473)
+- Bump  version for Factory
+  13.1 is continued on SuSE-Code-13_1-Branch
+- version 1.10.0
+
+-------------------------------------------------------------------
+Sun Oct  6 01:14:52 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Oct  3 01:15:29 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Sep 30 14:28:06 CEST 2013 - ma@suse.de
+
+- Suppress duplicate "No package matching" messages (bnc#725872)
+- Fix 'zypper --root sh' creating the zypp lockfile outside chroot (bnc#575096)
+- Fix exception thrown if no config file exists, that's no error.
+- correct command help for search option --suggests
+- add --orphaned, --suggested, --recommended, --unneeded to 'zypper packages'
+- Fix inappropriate message about not installed recommend package (bnc#826973)
+- version 1.9.2
+
+-------------------------------------------------------------------
+Sun Sep 29 01:15:27 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep 26 01:14:42 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep 22 01:14:45 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep 19 01:16:08 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep 15 01:15:25 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep 12 01:16:09 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep  8 01:14:21 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep  5 01:14:19 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep  1 01:14:17 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug 29 01:14:16 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug 22 01:13:40 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Aug 18 01:13:32 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug 15 01:13:50 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Aug 11 01:13:28 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug  8 01:13:42 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Aug  4 01:14:27 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug  1 01:14:15 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jul 28 01:14:46 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jul 11 01:14:33 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jul  4 01:14:20 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jun 30 01:14:03 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Jun 19 12:29:08 CEST 2013 - ma@suse.de
+
+- Set default zypper.log mode to 0640 (bnc#825490)
+- version 1.9.1
+
+-------------------------------------------------------------------
+Sun May 26 01:13:27 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu May 23 01:13:27 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun May 19 01:13:57 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun May 12 01:14:10 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu May  9 01:14:23 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Fri May  3 17:57:30 CEST 2013 - ma@suse.de
+
+- Add -E, --show-enabled-only option to list repos/services command
+  (FATE#314994)
+- version 1.9.0
+
+-------------------------------------------------------------------
+Thu May  2 01:14:18 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Apr 28 01:14:52 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Apr 18 01:14:45 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Apr 11 01:13:39 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Fri Apr  5 15:41:21 CEST 2013 - ma@suse.de
+
+- Added new option 'download-only' to source-install (bnc #640403)
+- Show the right product in summary (bnc#811997)
+- version 1.8.14
+
+-------------------------------------------------------------------
+Thu Apr  4 01:14:04 CEST 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Mar 26 13:06:48 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Mar 26 08:55:59 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Mar 19 13:55:03 CET 2013 - ma@suse.de
+
+- disable repo permanently if required by user
+- also search in file list when searching for a path name in 
+  provides (bnc #798290)
+- add option --verbose to search command (show details about matches)
+- enable substrings and wildcards for 'info' (bnc #741758)
+- add search for provides, requires, conflicts, suggests and obsoletes, 
+  search for capabilities
+- version 1.8.13
+
+-------------------------------------------------------------------
+Sun Mar 10 01:14:24 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Mar  4 15:26:37 CET 2013 - ma@suse.de
+
+- Fix 'zypper lu' also listing products (bnc#779740)
+- Fix -x printing edition values for arch-old (bnc#793809)
+- version 1.8.12
+
+-------------------------------------------------------------------
+Sun Mar  3 01:16:19 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Feb 28 11:46:36 CET 2013 - ma@suse.de
+
+- fix zypper disregarding zypp.conf cache path settings (bnc#806568)
+- Allow re-install with different arch upon explicit request (bnc#804219)
+- version 1.8.11
+
+-------------------------------------------------------------------
+Thu Feb 28 01:15:24 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Feb 24 01:14:42 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Feb 21 01:14:25 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Feb 17 01:14:01 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Feb 14 01:14:02 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Feb 10 01:13:38 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Feb  7 14:30:47 CET 2013 - ma@suse.de
+
+- zypper commandline args must not silently overrule locks 
+  (bnc#742633,bnc#788863)
+- version 1.8.10
+
+-------------------------------------------------------------------
+Thu Feb  7 01:17:27 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Feb  4 12:36:21 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Jan 30 12:32:41 CET 2013 - ma@suse.de
+
+- Add '--oldpackage' to allow rollback without malicious --force 
+  (bnc#795076)
+- Add missing --recommends to verify command (bnc#722551)
+- version 1.8.9
+
+-------------------------------------------------------------------
+Fri Jan 18 21:17:52 CET 2013 - ma@suse.de
+
+- Add source-download command (fate#313445)
+- Fixing permissions is obsolete since zypper refresh wrapper has 
+  been dropped (bnc#764119)
+- Fix excess whitespace in install counter (bnc#674572)
+- version 1.8.8
+
+-------------------------------------------------------------------
+Thu Jan 17 01:17:39 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jan 13 01:13:37 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jan 10 01:14:52 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jan  3 01:13:21 CET 2013 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Dec 27 01:13:41 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Dec 20 09:06:18 CET 2012 - ma@suse.de
+
+- Fix install counter (bnc#793285)
+- Add an "--ignore-unknown" global option to zypper.
+- Show installation progress (bnc #779427)
+- version 1.8.7
+
+-------------------------------------------------------------------
+Thu Dec 20 01:14:16 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Dec 16 01:13:31 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Dec  9 01:14:36 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Dec  6 01:14:21 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Nov 22 01:15:07 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Nov 18 01:14:08 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Nov 15 01:14:13 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Nov 13 15:42:10 CET 2012 - ma@suse.de
+
+- Add global '--userdata' option to allow defining transaction ids (fate#312521)
+- BuildRequire libzypp supporting userdata transaction ids.
+- Fix 'whatprovides' output (bnc#787318)
+- version 1.8.6
+
+-------------------------------------------------------------------
+Thu Nov  1 01:14:15 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Oct 28 01:14:13 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Oct 25 18:08:59 CEST 2012 - ma@suse.de
+
+- Fix source-install to accept package names and lookup their 
+  source package (bnc#785832)
+- version 1.8.5
+
+-------------------------------------------------------------------
+Wed Oct 24 10:22:24 CEST 2012 - ma@suse.de
+
+- return dedicated error code if libzypp is locked (bnc #772353)
+- Don't ask for license agreement for openSUSE (bnc #780659)
+- add patch/list-patches option --category to man
+- Fix zypper output if stdout is not a tty (bnc#779716)
+- version 1.8.4
+
+-------------------------------------------------------------------
+Thu Oct 18 01:14:10 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep 27 01:14:05 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep 23 01:14:10 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep 20 01:14:12 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep 16 01:15:01 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Sep 12 13:55:56 CEST 2012 - ma@suse.de
+
+- Use edition style on table columns in color mode
+- Reload target before executing a new command in 'zypper shell'
+  (bnc #767880)
+- version 1.8.3
+
+-------------------------------------------------------------------
+Tue Sep 11 11:58:00 CEST 2012 - ma@suse.de
+
+- show reason for not installed recommended packages (bnc #698766)
+- version 1.8.2
+
+-------------------------------------------------------------------
+Mon Sep 10 16:57:27 CEST 2012 - ma@suse.de
+
+- Rephrase misleading sections about zypp.conf and zypper.conf
+  (bnc#777323)
+- Enable zypper-log reading lzma (.xz) compressed logs.
+- properly encode data in XML output (bnc#773641)
+- version 1.8.1
+
+-------------------------------------------------------------------
+Sun Sep  9 01:13:57 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug 30 01:14:29 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug  2 13:16:27 CEST 2012 - ma@suse.de
+
+- Bump version for Factory
+  1.7.x is continued on SuSE-Code-12_2-Branch
+- version 1.8.0
+
+-------------------------------------------------------------------
+Thu Aug  2 01:14:43 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jul 29 01:14:21 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jul 19 01:14:30 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jul 12 01:15:05 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jul  5 01:14:10 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jul  1 01:14:13 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jun 28 01:15:17 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Jun 25 10:29:19 CEST 2012 - ma@suse.de
+
+- Fix spacing bug in progress bar (bnc#674572)
+- consider dual width fonts in output (bnc#766443)
+- Don't treat patches with licensed packages as interactive if 
+  --auto-agree-with-licenses is used (bnc#730824)
+- version 1.7.3
+
+-------------------------------------------------------------------
+Sun Jun 24 01:15:18 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jun 14 01:14:19 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jun 10 01:15:22 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jun  7 01:14:32 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jun  3 01:15:02 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu May 31 01:13:25 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun May 27 01:13:49 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu May 24 01:15:08 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun May 20 01:14:09 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu May 17 01:15:45 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun May 13 01:14:42 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun May  6 01:14:16 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Apr 29 01:13:44 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Apr 26 01:14:25 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Apr 24 18:49:50 CEST 2012 - ma@suse.de
+
+- More fixes for multibyte string output (bnc#735016)
+- version 1.7.2
+
+-------------------------------------------------------------------
+Sun Apr 22 01:16:09 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Apr 19 01:15:32 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Apr 18 18:40:43 CEST 2012 - ma@suse.de
+
+- Some progress bar fixes
+- Fix eating terminal lines (bnc#735016)
+
+-------------------------------------------------------------------
+Mon Apr 16 20:56:33 CEST 2012 - ma@suse.de
+
+- Let zypper remove lock follow addlock with respect to args and behavior (bnc#751976)
+- Typo (bnc#756192)
+- Improve source package related messages upon install and remove (bnc#755239)
+- Pass --root to libzypp early so lockfile is created chroot (bnc#575096)
+- Do not acquire a zypp lock for 'zypper ps' (bnc#703598)
+- Show note about possibly incomplete 'zypper ps' if not run as root (bnc#710872)
+- version 1.7.1
+
+-------------------------------------------------------------------
+Sun Apr 15 01:13:41 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Apr 12 01:13:34 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Apr 10 12:11:51 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Apr  8 01:13:41 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Apr  5 01:16:37 CEST 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Mar  1 01:13:54 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Feb 26 01:14:12 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Feb 23 12:22:09 CET 2012 - ma@suse.de
+
+- Fix augeas lense enforcing a non empty anonymous section (bnc#748144)
+
+-------------------------------------------------------------------
+Thu Feb  9 01:15:09 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Feb  2 01:14:45 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jan 29 01:15:10 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jan 22 01:14:05 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Jan 15 01:13:31 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jan 12 01:13:39 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Jan 11 11:19:41 CET 2012 - ma@suse.de
+
+- Fix man page --cache-dir description. (bnc#738677)
+
+-------------------------------------------------------------------
+Tue Jan 10 18:38:57 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Jan 10 18:32:11 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Jan 10 13:52:48 CET 2012 - ma@suse.de
+
+- Return nonzero (104 - INF_CAP_NOT_FOUND) when query matches no 
+  package (bnc#719690)
+
+-------------------------------------------------------------------
+Mon Jan  9 16:30:52 CET 2012 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Dec 22 15:35:35 CET 2011 - ma@suse.de
+
+- Remove setuid root binary /usr/sbin/zypp-refresh-wrapper (bnc#724832)
+
+-------------------------------------------------------------------
+Wed Dec 21 17:57:31 CET 2011 - ma@suse.de
+
+- Fix zypp.conf lens (bnc#687530)
+- New subpackage zypper-aptitude
+- version 1.7.0
+
+-------------------------------------------------------------------
+Mon Dec 19 14:15:36 CET 2011 - ma@suse.de
+
+- Update manpage to give some repo URI examples (bnc#680630)
+
+-------------------------------------------------------------------
+Tue Dec  6 18:27:25 CET 2011 - ma@suse.de
+
+- Print patch summary (bnc#733167)
+- zypper-log: fix regex to match hostnames with embeded '-' too.
+- version 1.6.18
+
+-------------------------------------------------------------------
+Thu Dec  1 01:13:59 CET 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Nov 30 16:43:13 CET 2011 - ma@suse.de
+
+- Eat trailing whitespace in zypper.conf (bnc#687530)
+- Fix some static initializer issues
+
+-------------------------------------------------------------------
+Sun Nov 27 01:13:31 CET 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Nov 22 17:41:02 CET 2011 - dheidler@suse.de
+
+- zypper-log: fixed bnc#732065:
+  Don't truncate output, when writing to pipe
+- version 1.6.17
+
+-------------------------------------------------------------------
+Sun Nov 20 01:13:31 CET 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Nov 17 01:13:55 CET 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Nov 14 15:31:37 CET 2011 - ma@suse.de
+
+- Never evaluate package support status on openSUSE (bnc#715057)
+
+-------------------------------------------------------------------
+Sun Nov 13 01:13:19 CET 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Nov 10 11:08:28 CET 2011 - ma@suse.de
+
+- Relax parsing obs:// urls (bnc#713521)
+
+-------------------------------------------------------------------
+Sun Nov  6 01:14:12 CET 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Fri Nov  4 13:43:19 CET 2011 - ma@suse.de
+
+- zypper-log: fix regex and on the fly support searching yast logs too
+
+-------------------------------------------------------------------
+Thu Nov  3 01:13:33 CET 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Oct 30 01:14:56 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Oct 27 11:16:53 CEST 2011 - dheidler@suse.de
+
+- Change zypper-log arch to noarch
+
+-------------------------------------------------------------------
+Thu Oct 27 01:14:20 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Oct 20 01:13:53 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Oct 16 01:13:57 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Oct 13 01:13:56 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Oct  9 01:13:28 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Oct  6 01:14:20 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep 29 01:13:35 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep 18 01:14:48 CEST 2011 - ma@suse.de
+
+- Update sle-zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep 18 01:13:15 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep 15 01:13:38 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Sep 13 12:55:18 CEST 2011 - ma@suse.de
+
+- Fix 'zypper info's report of package support status (bnc#651614)
+- version 1.6.16
+
+-------------------------------------------------------------------
+Sun Sep 11 01:19:20 CEST 2011 - ma@suse.de
+
+- Update sle-zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep 11 01:13:51 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep  8 01:19:44 CEST 2011 - ma@suse.de
+
+- Update sle-zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep  8 01:14:57 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep  4 01:17:12 CEST 2011 - ma@suse.de
+
+- Update sle-zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Sep  4 01:13:42 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Sep  1 01:14:00 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Aug 30 11:37:54 CEST 2011 - ma@suse.de
+
+- Restore default behavior for newly create repos to have gpg checks
+  enabled. This was accidentally disabled in 1.6.2. (bnc#714910,
+  bnc#524787)
+- version 1.6.15
+
+-------------------------------------------------------------------
+Thu Aug 25 01:17:27 CEST 2011 - ma@suse.de
+
+- Update sle-zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Mon Aug 22 13:57:43 CEST 2011 - ma@suse.de
+
+- Update sle-zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug 18 01:13:16 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Aug 14 01:13:48 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Sun Aug  7 01:16:44 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Aug  4 01:14:58 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Fri Jul 22 15:17:04 CEST 2011 - ma@suse.de
+
+- Fix missing include header.
+
+-------------------------------------------------------------------
+Thu Jul 21 12:01:01 CEST 2011 - ma@suse.de
+
+- Fix 'zypper search' xml output (bnc#687529)
+- version 1.6.14
+
+-------------------------------------------------------------------
+Tue Jul 19 11:41:59 CEST 2011 - dheidler@suse.de
+
+- zypper-log: require python2.6 and argparse insted of 2.7
+              on suse < 11.4
+- zypper-log: fix dependencies for other distros
+
+-------------------------------------------------------------------
+Wed Jul 13 15:41:59 CEST 2011 - dheidler@suse.de
+
+- zypper-log: view better error msg when logfile doesn't exist
+
+-------------------------------------------------------------------
+Thu Jul  7 01:14:05 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Thu Jun 30 01:13:58 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Tue Jun 28 12:17:34 CEST 2011 - dheidler@suse.de
+
+- better error msg for date format missmatch in zypper-log
+- 1.6.13
+
+-------------------------------------------------------------------
+Tue Jun 28 12:02:34 CEST 2011 - dheidler@suse.de
+
+- enable date option also for PID-Query in zypper-log
+- check date syntax in zypper-log
+- 1.6.12
+
+-------------------------------------------------------------------
+Mon Jun 27 10:40:34 CEST 2011 - dheidler@suse.de
+
+- Catch Broken-PIPE Exception in zypper-log
+- 1.6.11
+
+-------------------------------------------------------------------
+Sun Jun 19 01:15:41 CEST 2011 - ma@suse.de
+
+- Update zypper-po.tar.bz2
+
+-------------------------------------------------------------------
+Wed Jun 15 11:28:04 CEST 2011 - dheidler@suse.de
+
+- Add zypper-log tool (cli to access zypper logfile)
+
+-------------------------------------------------------------------
 Thu Jun  9 09:22:14 CEST 2011 - ma@suse.de
 
 - Update zypper-po.tar.bz2
